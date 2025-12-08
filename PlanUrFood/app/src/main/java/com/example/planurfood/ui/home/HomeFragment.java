@@ -1,26 +1,34 @@
 package com.example.planurfood.ui.home;
 
+import android.app.AlertDialog;
 import android.os.Bundle;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.ArrayAdapter;
+import android.widget.Button;
+import android.widget.FrameLayout;
+import android.widget.LinearLayout;
+import android.widget.ListView;
+import android.widget.TextView;
+import android.widget.Toast;
+
 import androidx.annotation.NonNull;
 import androidx.fragment.app.Fragment;
-import com.example.planurfood.databinding.FragmentHomeBinding;
-import com.example.planurfood.ui.home.WeekAdapter;
+import androidx.recyclerview.widget.LinearLayoutManager;
+import androidx.recyclerview.widget.RecyclerView;
+
 import com.example.planurfood.R;
-
-import java.util.Map;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Arrays;
-import java.util.ArrayList;
-import java.util.Set;
-
-
-import android.app.AlertDialog;
-import android.widget.Toast;
+import com.example.planurfood.databinding.FragmentHomeBinding;
 import com.google.android.material.textfield.TextInputEditText;
+
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 import retrofit2.Call;
 import retrofit2.Callback;
@@ -29,272 +37,301 @@ import retrofit2.Response;
 public class HomeFragment extends Fragment {
 
     private FragmentHomeBinding binding;
+
+    // ESTRUCTURA DE DATOS
     private Map<String, Map<String, List<String>>> libroDeRecetas = new HashMap<>();
     private Map<String, String> menuSemanal = new HashMap<>();
 
     public View onCreateView(@NonNull LayoutInflater inflater,
                              ViewGroup container, Bundle savedInstanceState) {
 
-        // Esta línea conecta con el diseño XML
         binding = FragmentHomeBinding.inflate(inflater, container, false);
-        cargarDatosEjemplo();
         View root = binding.getRoot();
 
+        // 1. Cargar recetas al iniciar
         cargarDatosDesdeSupabase();
 
-        // 1. Preparamos los datos
-        ArrayList<String> diasSemana = new ArrayList<>();
-        diasSemana.add("MONDAY");
-        diasSemana.add("TUESDAY");
-        diasSemana.add("WEDNESDAY");
-        diasSemana.add("THURSDAY");
-        diasSemana.add("FRIDAY");
-        diasSemana.add("SATURDAY");
-        diasSemana.add("SUNDAY");
+        // 2. Configurar el RecyclerView del calendario
+        ArrayList<String> diasSemana = new ArrayList<>(Arrays.asList(
+                "MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY", "SUNDAY"
+        ));
 
-        // 2. Buscamos el RecyclerView en el XML
-        // IMPORTANTE: Asegúrate de que en fragment_home.xml el id es android:id="@+id/recyclerWeek"
-        androidx.recyclerview.widget.RecyclerView recyclerView = binding.recyclerWeek;
-
-        // 3. Le decimos que se coloque como lista vertical
+        RecyclerView recyclerView = binding.recyclerWeek;
         if (recyclerView != null) {
-            recyclerView.setLayoutManager(new androidx.recyclerview.widget.LinearLayoutManager(getContext()));
-
-            // 4. Creamos el Adapter y se lo ponemos
-            WeekAdapter adapter = new WeekAdapter(diasSemana, new WeekAdapter.OnMealClickListener() {
-                @Override
-                public void onMealClick(String dia, String tipoComida, TextInputEditText cajonTocado) {
-                    mostrarSelectorDeRecetas(dia, tipoComida, cajonTocado);
-                }
-            });
+            recyclerView.setLayoutManager(new LinearLayoutManager(getContext()));
+            WeekAdapter adapter = new WeekAdapter(diasSemana, (dia, tipoComida, cajonTocado) ->
+                    mostrarSelectorDeRecetas(dia, tipoComida, cajonTocado)
+            );
             recyclerView.setAdapter(adapter);
         }
 
-        binding.fabShoppingList.setOnClickListener(v -> {
-            generarYMostrarListaCompra();
-        });
+        // 3. Botón Lista de la Compra
+        binding.fabShoppingList.setOnClickListener(v -> generarYMostrarListaCompra());
+
+        // 4. Botón Añadir Receta (Inicia el Paso 1 del Asistente)
+        binding.fabAddRecipe.setOnClickListener(v -> step1_PedirNombre());
 
         return root;
     }
-    private void mostrarSelectorDeRecetas(String dia, String tipoComida, TextInputEditText cajon) {
-        View customView = getLayoutInflater().inflate(R.layout.dialog_meal_selector, null);
 
-        android.widget.TextView titulo = customView.findViewById(R.id.dialogTitle);
-        titulo.setText(tipoComida + " of " + dia);
-
-        // --- DEBUG: Comprobamos qué está buscando la app ---
-        Map<String, List<String>> recetasDelTipo = libroDeRecetas.get(tipoComida);
-        final List<String> nombresRecetas = new ArrayList<>();
-
-        if (recetasDelTipo != null && !recetasDelTipo.isEmpty()) {
-            nombresRecetas.addAll(recetasDelTipo.keySet());
-        } else {
-            nombresRecetas.add("No hay recetas disponibles");
-            // ESTO ES IMPORTANTE: Te dirá si el fallo es que la caja está vacía
-            Toast.makeText(getContext(), "La categoría '" + tipoComida + "' está vacía", Toast.LENGTH_SHORT).show();
-        }
-
-        android.widget.ListView lista = customView.findViewById(R.id.listRecetas);
-        android.widget.ArrayAdapter<String> adapter = new android.widget.ArrayAdapter<>(
-                getContext(),
-                android.R.layout.simple_list_item_1,
-                nombresRecetas
-        );
-        lista.setAdapter(adapter);
-
-        android.widget.Button btnNueva = customView.findViewById(R.id.btnNewRecipe);
-
-        AlertDialog.Builder builder = new AlertDialog.Builder(getContext());
-        builder.setView(customView);
-        AlertDialog dialog = builder.create();
-
-        if (dialog.getWindow() != null) {
-            dialog.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT));
-        }
-
-        lista.setOnItemClickListener((parent, view, position, id) -> {
-            String recetaElegida = nombresRecetas.get(position);
-            // Evitamos seleccionar el texto de aviso
-            if (!recetaElegida.equals("No hay recetas disponibles")) {
-                cajon.setText(recetaElegida);
-                menuSemanal.put(dia + "_" + tipoComida, recetaElegida);
-                dialog.dismiss();
-            }
-        });
-
-        btnNueva.setOnClickListener(v -> {
-            Toast.makeText(getContext(), "Función crear receta pendiente...", Toast.LENGTH_SHORT).show();
-            dialog.dismiss();
-        });
-
-        dialog.show();
-    }
-
-    private void procesarRecetas(List<RecetaModelo> lista) {
-        // 1. Limpiamos datos viejos
-        libroDeRecetas.clear();
-
-        // 2. Inicializamos las cajas (Claves en Inglés para coincidir con WeekAdapter)
-        libroDeRecetas.put("Breakfast", new HashMap<>());
-        libroDeRecetas.put("Lunch", new HashMap<>());
-        libroDeRecetas.put("Dinner", new HashMap<>());
-
-        int contadorRecetas = 0; // Para saber cuántas hemos cargado
-
-        // 3. Recorremos lo que viene de Supabase
-        for (RecetaModelo r : lista) {
-
-            // --- TRADUCTOR A PRUEBA DE BALAS ---
-            String catEnBaseDatos = r.getCategoria();
-
-            // Si la categoría viene vacía, pasamos a la siguiente
-            if (catEnBaseDatos == null) continue;
-
-            // Limpiamos espacios y pasamos a minúsculas para comparar fácil
-            String catLimpia = catEnBaseDatos.trim().toLowerCase();
-
-
-
-            // Buscamos la caja correcta
-            Map<String, List<String>> categoriaMap = libroDeRecetas.get(catLimpia);
-
-            if (categoriaMap != null) {
-                // Sacamos los nombres de los ingredientes
-                List<String> listaSoloNombres = new ArrayList<>();
-                if (r.getIngredientes() != null) {
-                    for (RecetaModelo.Ingrediente item : r.getIngredientes()) {
-                        if (item.getNombre() != null) {
-                            listaSoloNombres.add(item.getNombre());
-                        }
-                    }
-                }
-                // Guardamos la receta
-                categoriaMap.put(r.getNombre(), listaSoloNombres);
-                contadorRecetas++;
-            }
-        }
-
-        // --- MENSAJE DE CONTROL ---
-        Toast.makeText(getContext(), "Cargadas " + contadorRecetas + " recetas desde Supabase", Toast.LENGTH_LONG).show();
-    }
+    // =================================================================================
+    //  ZONA 1: LECTURA Y ESCRITURA EN SUPABASE
+    // =================================================================================
 
     private void cargarDatosDesdeSupabase() {
-        // Obtenemos la API
         SupabaseApi api = SupabaseClient.getApi();
-
-        // Preparamos la llamada. Authorization necesita "Bearer " delante de la clave
         Call<List<RecetaModelo>> llamada = api.obtenerRecetas(
-                SupabaseClient.SUPABASE_KEY,
-                "Bearer " + SupabaseClient.SUPABASE_KEY
+                SupabaseClient.SUPABASE_KEY, "Bearer " + SupabaseClient.SUPABASE_KEY
         );
 
-        // Hacemos la llamada en segundo plano (enqueue)
         llamada.enqueue(new Callback<List<RecetaModelo>>() {
             @Override
             public void onResponse(Call<List<RecetaModelo>> call, Response<List<RecetaModelo>> response) {
                 if (response.isSuccessful() && response.body() != null) {
-                    List<RecetaModelo> recetasDescargadas = response.body();
-                    procesarRecetas(recetasDescargadas);
+                    procesarRecetas(response.body());
                 } else {
-                    // --- CAMBIA ESTO PARA VER EL ERROR REAL ---
-                    try {
-                        // Esto nos dirá si es 404 (No encontrado), 401 (Permiso), etc.
-                        String errorMsg = "Error " + response.code() + ": " + response.message();
-                        if (response.errorBody() != null) {
-                            errorMsg += "\n" + response.errorBody().string();
-                        }
-                        // Usamos LENGTH_LONG para que te dé tiempo a leerlo
-                        Toast.makeText(getContext(), errorMsg, Toast.LENGTH_LONG).show();
-                        // También lo imprimimos en la consola de abajo (Logcat)
-                        System.out.println("ERROR SUPABASE: " + errorMsg);
-                    } catch (Exception e) {
-                        e.printStackTrace();
-                    }
+                    Toast.makeText(getContext(), "Error servidor: " + response.code(), Toast.LENGTH_SHORT).show();
                 }
             }
-
             @Override
             public void onFailure(Call<List<RecetaModelo>> call, Throwable t) {
-                // --- CAMBIA ESTO TAMBIÉN ---
-                Toast.makeText(getContext(), "FALLO TÉCNICO: " + t.getMessage(), Toast.LENGTH_LONG).show();
-                t.printStackTrace();
+                Toast.makeText(getContext(), "Error conexión: " + t.getMessage(), Toast.LENGTH_SHORT).show();
             }
         });
     }
 
-    private void cargarDatosEjemplo() {
+    private void procesarRecetas(List<RecetaModelo> lista) {
+        libroDeRecetas.clear();
+        // Inicializamos claves en minúscula
+        libroDeRecetas.put("breakfast", new HashMap<>());
+        libroDeRecetas.put("lunch", new HashMap<>());
+        libroDeRecetas.put("dinner", new HashMap<>());
 
-        // --- DESAYUNOS (Breakfast) ---
-        Map<String, List<String>> desayunos = new HashMap<>();
-        desayunos.put("Tostadas con Aguacate", Arrays.asList("Pan integral", "Aguacate", "Sal", "Aceite"));
-        desayunos.put("Avena con Frutas", Arrays.asList("Avena", "Leche", "Plátano", "Fresas"));
-        desayunos.put("Tortilla Francesa", Arrays.asList("Huevos", "Sal", "Aceite"));
-        libroDeRecetas.put("Breakfast", desayunos); // Usamos la clave en inglés porque así la manda el Adapter
+        int contador = 0;
+        for (RecetaModelo r : lista) {
+            if (r.getCategoria() == null || r.getNombre() == null) continue;
 
-        // --- COMIDAS (Lunch) ---
-        Map<String, List<String>> comidas = new HashMap<>();
-        comidas.put("Pollo al Curry", Arrays.asList("Pechuga de pollo", "Curry", "Arroz basmati", "Cebolla"));
-        comidas.put("Lentejas Estofadas", Arrays.asList("Lentejas", "Chorizo", "Zanahoria", "Patata"));
-        comidas.put("Ensalada César", Arrays.asList("Lechuga", "Pollo", "Picatostes", "Salsa César", "Queso"));
-        libroDeRecetas.put("Lunch", comidas);
+            String catLimpia = r.getCategoria().trim().toLowerCase();
+            if (catLimpia.equals("diner")) catLimpia = "dinner";
 
-        // --- CENAS (Diner) ---
-        Map<String, List<String>> cenas = new HashMap<>();
-        cenas.put("Merluza a la Plancha", Arrays.asList("Merluza", "Ajo", "Perejil", "Limón"));
-        cenas.put("Sopa de Verduras", Arrays.asList("Caldo", "Fideos", "Zanahoria", "Puerro"));
-        cenas.put("Yogur con Nueces", Arrays.asList("Yogur Griego", "Nueces", "Miel"));
-        libroDeRecetas.put("Diner", cenas);
+            Map<String, List<String>> recetasDeEsaCategoria = libroDeRecetas.get(catLimpia);
+            if (recetasDeEsaCategoria != null) {
+                List<String> ingredientesTexto = new ArrayList<>();
+                if (r.getIngredientes() != null) {
+                    for (RecetaModelo.Ingrediente item : r.getIngredientes()) {
+                        if (item.getNombre() != null) {
+                            String ing = item.getNombre();
+                            if(item.getCantidad() != null) ing += " (" + item.getCantidad() + ")";
+                            ingredientesTexto.add(ing);
+                        }
+                    }
+                }
+                recetasDeEsaCategoria.put(r.getNombre(), ingredientesTexto);
+                contador++;
+            }
+        }
+        Toast.makeText(getContext(), "¡" + contador + " recetas cargadas!", Toast.LENGTH_SHORT).show();
+    }
+
+    private void subirRecetaASupabase(String nombre, String categoria, String ingredientesTexto) {
+        RecetaModelo nuevaReceta = new RecetaModelo();
+        nuevaReceta.setNombre(nombre);
+        nuevaReceta.setCategoria(categoria);
+
+        List<RecetaModelo.Ingrediente> listaIngs = new ArrayList<>();
+        if (ingredientesTexto != null && !ingredientesTexto.isEmpty()) {
+            String[] partes = ingredientesTexto.split(",");
+            for (String parte : partes) {
+                String[] datos = parte.split(":");
+                RecetaModelo.Ingrediente ing = new RecetaModelo.Ingrediente();
+                if (datos.length >= 1) {
+                    ing.setName(datos[0].trim());
+                    if (datos.length > 1) ing.setQuantity(datos[1].trim());
+                    else ing.setQuantity("1");
+                    listaIngs.add(ing);
+                }
+            }
+        }
+        nuevaReceta.setIngredientes(listaIngs);
+
+        SupabaseApi api = SupabaseClient.getApi();
+        Call<Void> llamada = api.crearReceta(
+                SupabaseClient.SUPABASE_KEY, "Bearer " + SupabaseClient.SUPABASE_KEY,
+                "return=minimal", nuevaReceta
+        );
+
+        llamada.enqueue(new Callback<Void>() {
+            @Override
+            public void onResponse(Call<Void> call, Response<Void> response) {
+                if (response.isSuccessful()) {
+                    Toast.makeText(getContext(), "¡Receta Guardada!", Toast.LENGTH_SHORT).show();
+                    cargarDatosDesdeSupabase(); // Recargar la lista
+                } else if (response.code() == 409) {
+                    Toast.makeText(getContext(), "Error: Ya existe ese nombre", Toast.LENGTH_LONG).show();
+                } else {
+                    Toast.makeText(getContext(), "Error al guardar: " + response.code(), Toast.LENGTH_SHORT).show();
+                }
+            }
+            @Override
+            public void onFailure(Call<Void> call, Throwable t) {
+                Toast.makeText(getContext(), "Fallo técnico: " + t.getMessage(), Toast.LENGTH_SHORT).show();
+            }
+        });
+    }
+
+    // =================================================================================
+    //  ZONA 2: ASISTENTE PASO A PASO (WIZARD)
+    // =================================================================================
+
+    // PASO 1: NOMBRE
+    private void step1_PedirNombre() {
+        AlertDialog.Builder builder = new AlertDialog.Builder(getContext());
+        builder.setTitle("Paso 1/3: Nombre");
+
+        final TextInputEditText input = new TextInputEditText(getContext());
+        input.setHint("Ej: Paella Valenciana");
+
+        FrameLayout container = new FrameLayout(getContext());
+        FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        params.setMargins(60, 20, 60, 20);
+        input.setLayoutParams(params);
+        container.addView(input);
+        builder.setView(container);
+
+        builder.setPositiveButton("Siguiente", (dialog, which) -> {
+            String nombre = input.getText().toString().trim();
+            if (!nombre.isEmpty()) step2_ElegirCategoria(nombre);
+            else Toast.makeText(getContext(), "El nombre es obligatorio", Toast.LENGTH_SHORT).show();
+        });
+        builder.setNegativeButton("Cancelar", null);
+        builder.show();
+    }
+
+    // PASO 2: CATEGORÍA (BOTONES)
+    private void step2_ElegirCategoria(String nombreReceta) {
+        AlertDialog.Builder builder = new AlertDialog.Builder(getContext());
+        builder.setTitle("Paso 2/3: Categoría");
+        builder.setMessage("Para: " + nombreReceta);
+
+        LinearLayout layout = new LinearLayout(getContext());
+        layout.setOrientation(LinearLayout.VERTICAL);
+        layout.setPadding(60, 20, 60, 20);
+
+        Button btnBreakfast = new Button(getContext()); btnBreakfast.setText("Breakfast");
+        Button btnLunch = new Button(getContext());     btnLunch.setText("Lunch");
+        Button btnDinner = new Button(getContext());    btnDinner.setText("Dinner");
+
+        layout.addView(btnBreakfast);
+        layout.addView(btnLunch);
+        layout.addView(btnDinner);
+        builder.setView(layout);
+
+        AlertDialog dialog = builder.create();
+        View.OnClickListener listener = v -> {
+            String categoria = ((Button) v).getText().toString();
+            dialog.dismiss();
+            step3_PedirIngredientes(nombreReceta, categoria);
+        };
+
+        btnBreakfast.setOnClickListener(listener);
+        btnLunch.setOnClickListener(listener);
+        btnDinner.setOnClickListener(listener);
+        dialog.show();
+    }
+
+    // PASO 3: INGREDIENTES
+    private void step3_PedirIngredientes(String nombreReceta, String categoriaReceta) {
+        AlertDialog.Builder builder = new AlertDialog.Builder(getContext());
+        builder.setTitle("Paso 3/3: Ingredientes");
+        builder.setMessage(nombreReceta + " (" + categoriaReceta + ")");
+
+        final TextInputEditText input = new TextInputEditText(getContext());
+        input.setHint("Ej: Arroz:100, Pollo:1");
+
+        FrameLayout container = new FrameLayout(getContext());
+        FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        params.setMargins(60, 20, 60, 20);
+        input.setLayoutParams(params);
+        container.addView(input);
+        builder.setView(container);
+
+        builder.setPositiveButton("¡Crear!", (dialog, which) -> {
+            String ingredientes = input.getText().toString();
+            subirRecetaASupabase(nombreReceta, categoriaReceta, ingredientes);
+        });
+        builder.setNegativeButton("Atrás", (dialog, which) -> step2_ElegirCategoria(nombreReceta));
+        builder.show();
+    }
+
+    // =================================================================================
+    //  ZONA 3: UI DEL SELECTOR Y LISTA COMPRA
+    // =================================================================================
+
+    private void mostrarSelectorDeRecetas(String dia, String tipoComida, TextInputEditText cajon) {
+        View customView = getLayoutInflater().inflate(R.layout.dialog_meal_selector, null);
+        TextView titulo = customView.findViewById(R.id.dialogTitle);
+        titulo.setText(tipoComida + " (" + dia + ")");
+
+        String claveBusqueda = tipoComida.trim().toLowerCase();
+        if (claveBusqueda.equals("diner")) claveBusqueda = "dinner";
+
+        Map<String, List<String>> recetasMap = libroDeRecetas.get(claveBusqueda);
+        final List<String> nombresRecetas = new ArrayList<>();
+
+        if (recetasMap != null && !recetasMap.isEmpty()) {
+            nombresRecetas.addAll(recetasMap.keySet());
+        } else {
+            nombresRecetas.add("No hay recetas disponibles");
+        }
+
+        ListView lista = customView.findViewById(R.id.listRecetas);
+        ArrayAdapter<String> adapter = new ArrayAdapter<>(getContext(), android.R.layout.simple_list_item_1, nombresRecetas);
+        lista.setAdapter(adapter);
+
+        AlertDialog.Builder builder = new AlertDialog.Builder(getContext());
+        builder.setView(customView);
+        AlertDialog dialog = builder.create();
+        if (dialog.getWindow() != null) dialog.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT));
+
+        lista.setOnItemClickListener((parent, view, position, id) -> {
+            String receta = nombresRecetas.get(position);
+            if (!receta.equals("No hay recetas disponibles")) {
+                cajon.setText(receta);
+                menuSemanal.put(dia + "_" + tipoComida, receta);
+                dialog.dismiss();
+            }
+        });
+
+        // Ocultamos el botón viejo si existe en el XML
+        View btnOld = customView.findViewById(R.id.btnNewRecipe);
+        if(btnOld != null) btnOld.setVisibility(View.GONE);
+
+        dialog.show();
     }
 
     private void generarYMostrarListaCompra() {
-        // 1. RECOPILAR INGREDIENTES
-        // Usamos un Set para que NO se repitan (si dos recetas piden "Sal", que salga solo una vez)
-        java.util.Set<String> listaIngredientes = new java.util.HashSet<>();
-
-        // Recorremos todo lo que el usuario ha planeado (menuSemanal)
-        for (String nombreReceta : menuSemanal.values()) {
-
-            // Buscamos esa receta en todas las categorías del libro (Desayuno, Comida, Cena)
-            for (Map<String, List<String>> categoria : libroDeRecetas.values()) {
-                if (categoria.containsKey(nombreReceta)) {
-                    // ¡Encontrada! Añadimos sus ingredientes a la lista de compra
-                    List<String> ingredientes = categoria.get(nombreReceta);
-                    if (ingredientes != null) {
-                        listaIngredientes.addAll(ingredientes);
-                    }
+        Set<String> unicos = new HashSet<>();
+        for (String receta : menuSemanal.values()) {
+            for (Map<String, List<String>> cat : libroDeRecetas.values()) {
+                if (cat.containsKey(receta)) {
+                    List<String> ings = cat.get(receta);
+                    if (ings != null) unicos.addAll(ings);
                 }
             }
         }
-
-        if (listaIngredientes.isEmpty()) {
-            Toast.makeText(getContext(), "Primero añade comidas al menú", Toast.LENGTH_SHORT).show();
+        if (unicos.isEmpty()) {
+            Toast.makeText(getContext(), "Planifica comidas primero.", Toast.LENGTH_SHORT).show();
             return;
         }
 
-        // 2. PREPARAR LA VENTANA DE CHECKBOXES
-        // Convertimos el Set a Array para que lo entienda el Dialog
-        String[] ingredientesArray = listaIngredientes.toArray(new String[0]);
-        // Array de booleanos para saber cuáles están marcados (al principio ninguno)
-        boolean[] marcados = new boolean[ingredientesArray.length];
+        String[] items = unicos.toArray(new String[0]);
+        boolean[] checked = new boolean[items.length];
 
-        AlertDialog.Builder builder = new AlertDialog.Builder(getContext());
-        builder.setTitle("Lista de la Compra");
-
-        // Esta función crea automáticamente una lista con checkboxes
-        builder.setMultiChoiceItems(ingredientesArray, marcados, (dialog, which, isChecked) -> {
-            // Aquí puedes hacer algo cuando el usuario marca/desmarca
-            marcados[which] = isChecked;
-        });
-
-        builder.setPositiveButton("Cerrar", null);
-
-        // Opcional: Botón para copiar o enviar
-        builder.setNeutralButton("Compartir", (dialog, which) -> {
-            // Aquí podrías poner código para enviar por WhatsApp
-            Toast.makeText(getContext(), "Función de compartir (pendiente)", Toast.LENGTH_SHORT).show();
-        });
-
-        builder.show();
+        new AlertDialog.Builder(getContext())
+                .setTitle("Lista de la Compra")
+                .setMultiChoiceItems(items, checked, (d, w, c) -> checked[w] = c)
+                .setPositiveButton("Cerrar", null)
+                .show();
     }
 
     @Override
