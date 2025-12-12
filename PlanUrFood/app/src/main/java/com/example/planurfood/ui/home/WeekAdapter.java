@@ -11,26 +11,28 @@ import androidx.recyclerview.widget.RecyclerView;
 import com.example.planurfood.R;
 
 import java.util.List;
+import java.util.Map;
 
 public class WeekAdapter extends RecyclerView.Adapter<WeekAdapter.WeekViewHolder> {
 
     private final List<String> days;
     private final OnMealClickListener listener;
-    // Interfaz para manejar clics en los elementos de la lista
+    private Map<String, String> datosGuardados;
+
+    // Interfaz para manejar clics
     public interface OnMealClickListener {
         void onMealClick(String dia, String tipoComida, TextInputEditText cajonTocado);
     }
 
-    // Constructor: aquí recibimos la lista de días
-    public WeekAdapter(List<String> days, OnMealClickListener listener) {
+    public WeekAdapter(List<String> days, Map<String, String> datos, OnMealClickListener listener) {
         this.days = days;
+        this.datosGuardados = datos;
         this.listener = listener;
     }
 
     @NonNull
     @Override
     public WeekViewHolder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
-        // Aquí "inflamos" (creamos) la vista de la tarjeta usando tu archivo item_day.xml
         View view = LayoutInflater.from(parent.getContext())
                 .inflate(R.layout.item_day, parent, false);
         return new WeekViewHolder(view);
@@ -38,41 +40,49 @@ public class WeekAdapter extends RecyclerView.Adapter<WeekAdapter.WeekViewHolder
 
     @Override
     public void onBindViewHolder(@NonNull WeekViewHolder holder, int position) {
-        // Aquí es donde ponemos el texto correcto (Lunes, Martes...) en cada tarjeta
         String dayName = days.get(position);
         holder.textDayName.setText(dayName);
 
-        //Cuando toquen el desayuno avisamos a fragment con el listener.
+        // CORRECCIÓN 1: Usamos 'dayName' (que es la variable local) en lugar de 'dia'
+        // CORRECCIÓN 2: Las claves deben coincidir con HomeFragment ("_Dinner")
+        String desayuno = datosGuardados.get(dayName + "_Breakfast");
+        String comida   = datosGuardados.get(dayName + "_Lunch");
+        String cena     = datosGuardados.get(dayName + "_Dinner");
+
+        // CORRECCIÓN 3: Usamos 'holder.input...' en vez de 'holder.et...'
+        holder.inputBreakfast.setText(desayuno != null ? desayuno : "");
+        holder.inputLunch.setText(comida != null ? comida : "");
+        holder.inputDiner.setText(cena != null ? cena : "");
+
+        // Listeners
         holder.inputBreakfast.setOnClickListener(v -> {
             listener.onMealClick(dayName, "Breakfast", holder.inputBreakfast);
         });
-        // Lo mismo con cada comida
+
         holder.inputLunch.setOnClickListener(v -> {
             listener.onMealClick(dayName, "Lunch", holder.inputLunch);
         });
+
         holder.inputDiner.setOnClickListener(v -> {
-            listener.onMealClick(dayName, "Diner", holder.inputDiner);
+            // Pasamos "Dinner" para que la clave del Map se guarde bien (MONDAY_Dinner)
+            listener.onMealClick(dayName, "Dinner", holder.inputDiner);
         });
     }
 
     @Override
     public int getItemCount() {
-        return days.size(); // Le dice a la lista cuántos elementos hay (7)
+        return days.size();
     }
 
-    // Clase interna para guardar las referencias a los elementos visuales
     public static class WeekViewHolder extends RecyclerView.ViewHolder {
         TextView textDayName;
         TextInputEditText inputBreakfast;
         TextInputEditText inputLunch;
         TextInputEditText inputDiner;
 
-
         public WeekViewHolder(@NonNull View itemView) {
             super(itemView);
-            // Buscamos el TextView del título que creamos en el XML
             textDayName = itemView.findViewById(R.id.textDayName);
-            // Lo mismo con los cajones de texto
             inputBreakfast = itemView.findViewById(R.id.inputBreakfast);
             inputLunch = itemView.findViewById(R.id.inputLunch);
             inputDiner = itemView.findViewById(R.id.inputDiner);

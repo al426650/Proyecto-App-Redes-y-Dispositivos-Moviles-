@@ -1,5 +1,7 @@
 package com.example.planurfood.ui.home;
 
+import static android.content.Context.MODE_PRIVATE;
+
 import android.app.AlertDialog;
 import android.os.Bundle;
 import android.view.LayoutInflater;
@@ -22,10 +24,19 @@ import com.example.planurfood.R;
 import com.example.planurfood.databinding.FragmentHomeBinding;
 import com.google.android.material.textfield.TextInputEditText;
 
+import org.json.JSONException;
+import org.json.JSONObject;
+
+import java.io.BufferedReader;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.InputStreamReader;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -41,6 +52,7 @@ public class HomeFragment extends Fragment {
     // ESTRUCTURA DE DATOS
     private Map<String, Map<String, List<String>>> libroDeRecetas = new HashMap<>();
     private Map<String, String> menuSemanal = new HashMap<>();
+    private static final String ARCHIVO_PLAN = "listacompra.json";
 
     public View onCreateView(@NonNull LayoutInflater inflater,
                              ViewGroup container, Bundle savedInstanceState) {
@@ -51,6 +63,8 @@ public class HomeFragment extends Fragment {
         // 1. Cargar recetas al iniciar
         cargarDatosDesdeSupabase();
 
+        cargarPlanSemanal();
+
         // 2. Configurar el RecyclerView del calendario
         ArrayList<String> diasSemana = new ArrayList<>(Arrays.asList(
                 "MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY", "SUNDAY"
@@ -59,7 +73,7 @@ public class HomeFragment extends Fragment {
         RecyclerView recyclerView = binding.recyclerWeek;
         if (recyclerView != null) {
             recyclerView.setLayoutManager(new LinearLayoutManager(getContext()));
-            WeekAdapter adapter = new WeekAdapter(diasSemana, (dia, tipoComida, cajonTocado) ->
+            WeekAdapter adapter = new WeekAdapter(diasSemana, menuSemanal, (dia, tipoComida, cajonTocado) ->
                     mostrarSelectorDeRecetas(dia, tipoComida, cajonTocado)
             );
             recyclerView.setAdapter(adapter);
@@ -77,7 +91,55 @@ public class HomeFragment extends Fragment {
     // =================================================================================
     //  ZONA 1: LECTURA Y ESCRITURA EN SUPABASE
     // =================================================================================
+    private void guardarPlanSemanal() {
+        JSONObject rootObject = new JSONObject();
+        try {
+            // Convertimos el Map<String, String> a JSON
+            for (Map.Entry<String, String> entry : menuSemanal.entrySet()) {
+                rootObject.put(entry.getKey(), entry.getValue());
+            }
 
+            FileOutputStream fos = requireActivity().openFileOutput(ARCHIVO_PLAN, MODE_PRIVATE);
+            fos.write(rootObject.toString().getBytes());
+            fos.close();
+
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+    private void cargarPlanSemanal() {
+        FileInputStream fis = null;
+        try {
+            fis = requireActivity().openFileInput(ARCHIVO_PLAN);
+            InputStreamReader isr = new InputStreamReader(fis);
+            BufferedReader reader = new BufferedReader(isr);
+            StringBuilder sb = new StringBuilder();
+            String line;
+
+            while ((line = reader.readLine()) != null) {
+                sb.append(line);
+            }
+
+            JSONObject rootObject = new JSONObject(sb.toString());
+            menuSemanal = new HashMap<>();
+
+            // Leemos todas las claves (ej: "MONDAY_Breakfast") y sus valores
+            Iterator<String> keys = rootObject.keys();
+            while (keys.hasNext()) {
+                String key = keys.next();
+                String valor = rootObject.getString(key);
+                menuSemanal.put(key, valor);
+            }
+
+        } catch (IOException | JSONException e) {
+            menuSemanal = new HashMap<>(); // Si falla o no existe, mapa vacío
+        } finally {
+            if (fis != null) {
+                try { fis.close(); } catch (IOException e) { e.printStackTrace(); }
+            }
+        }
+    }
     private void cargarDatosDesdeSupabase() {
         SupabaseApi api = SupabaseClient.getApi();
         Call<List<RecetaModelo>> llamada = api.obtenerRecetas(
@@ -297,12 +359,17 @@ public class HomeFragment extends Fragment {
             String receta = nombresRecetas.get(position);
             if (!receta.equals("No hay recetas disponibles")) {
                 cajon.setText(receta);
+
+                // Actualizamos el mapa en memoria
                 menuSemanal.put(dia + "_" + tipoComida, receta);
+
+                // GUARDAMOS EN ARCHIVO INMEDIATAMENTE
+                guardarPlanSemanal();
+
                 dialog.dismiss();
             }
         });
 
-        // Ocultamos el botón viejo si existe en el XML
         View btnOld = customView.findViewById(R.id.btnNewRecipe);
         if(btnOld != null) btnOld.setVisibility(View.GONE);
 
