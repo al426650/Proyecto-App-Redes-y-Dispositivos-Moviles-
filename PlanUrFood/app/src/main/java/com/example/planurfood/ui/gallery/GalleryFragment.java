@@ -15,23 +15,22 @@ import android.widget.Toast;
 
 import androidx.annotation.NonNull;
 import androidx.fragment.app.Fragment;
-import androidx.recyclerview.widget.ItemTouchHelper; // Importante para el swipe
+import androidx.recyclerview.widget.ItemTouchHelper;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
 import com.example.planurfood.R;
 import com.example.planurfood.databinding.FragmentGalleryBinding;
+import com.google.android.material.button.MaterialButtonToggleGroup;
 import com.google.android.material.floatingactionbutton.FloatingActionButton;
 import com.google.android.material.textfield.TextInputEditText;
 
 import org.json.JSONArray;
-import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.io.BufferedReader;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
-import java.io.IOException;
 import java.io.InputStreamReader;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -59,97 +58,101 @@ public class GalleryFragment extends Fragment {
         RecyclerView recyclerView = binding.recyclerPantry;
         recyclerView.setLayoutManager(new LinearLayoutManager(getContext()));
 
-        // Pasamos el listener (this::mostrarDialogo) al Adapter para editar al hacer clic
         adapter = new PantryAdapter(itemsParaMostrar, this::mostrarDialogo);
         recyclerView.setAdapter(adapter);
 
-        // CONFIGURAR SWIPE (Deslizar para borrar)
         configurarSwipe(recyclerView);
 
         FloatingActionButton fab = binding.fabAddPantryItem;
-        // Al dar al más, llamamos al diálogo con null (modo añadir)
         fab.setOnClickListener(v -> mostrarDialogo(null));
 
         return root;
     }
 
-    // --- LÓGICA DE BORRADO (SWIPE) ---
     private void configurarSwipe(RecyclerView recyclerView) {
         ItemTouchHelper.SimpleCallback simpleCallback = new ItemTouchHelper.SimpleCallback(0, ItemTouchHelper.RIGHT) {
             @Override
             public boolean onMove(@NonNull RecyclerView recyclerView, @NonNull RecyclerView.ViewHolder viewHolder, @NonNull RecyclerView.ViewHolder target) {
-                return false; // No queremos mover, solo deslizar
+                return false;
             }
 
             @Override
             public void onSwiped(@NonNull RecyclerView.ViewHolder viewHolder, int direction) {
                 int position = viewHolder.getAdapterPosition();
                 Object objeto = adapter.getItemAt(position);
-
-                // Solo borramos si es un producto, no una cabecera
                 if (objeto instanceof PantryItem) {
                     eliminarItem((PantryItem) objeto);
                 } else {
-                    // Si intenta borrar una cabecera, recargamos para que vuelva a su sitio
                     adapter.notifyItemChanged(position);
                 }
             }
         };
-
         new ItemTouchHelper(simpleCallback).attachToRecyclerView(recyclerView);
     }
 
     private void eliminarItem(PantryItem itemABorrar) {
         boolean borrado = false;
-        // Buscamos en qué categoría está y lo borramos
         for (List<PantryItem> lista : despensaMap.values()) {
             if (lista.remove(itemABorrar)) {
                 borrado = true;
                 break;
             }
         }
-
         if (borrado) {
             guardarDatosEnArchivo();
             actualizarListaVisual();
-            Toast.makeText(getContext(), "Eliminado: " + itemABorrar.getName(), Toast.LENGTH_SHORT).show();
+            Toast.makeText(getContext(), "Deleted: " + itemABorrar.getName(), Toast.LENGTH_SHORT).show();
         }
     }
 
-    // --- LÓGICA DE DIÁLOGO (AÑADIR Y EDITAR) ---
-    // Ahora recibe un parámetro. Si es null = AÑADIR. Si tiene datos = EDITAR.
     private void mostrarDialogo(PantryItem itemAEditar) {
         View customView = getLayoutInflater().inflate(R.layout.dialog_add_pantry, null);
 
         android.widget.AutoCompleteTextView inputName = customView.findViewById(R.id.inputFoodName);
         TextInputEditText inputQty = customView.findViewById(R.id.inputFoodQty);
+        MaterialButtonToggleGroup toggleGroup = customView.findViewById(R.id.toggleUnit);
         Spinner spinner = customView.findViewById(R.id.spinnerCategory);
         View btnGuardar = customView.findViewById(R.id.btnAddItem);
 
-        // Configurar Autocompletado
-        List<String> nombresComida = FoodResources.getNombresDisponibles();
+        List<String> nombresComida = FoodResources.getAvailableNames();
         ArrayAdapter<String> autoAdapter = new ArrayAdapter<>(getContext(), android.R.layout.simple_dropdown_item_1line, nombresComida);
         inputName.setAdapter(autoAdapter);
 
-        // Configurar Spinner Categorías
-        List<String> categorias = new ArrayList<>(despensaMap.keySet());
-        ArrayAdapter<String> spinnerAdapter = new ArrayAdapter<>(getContext(), android.R.layout.simple_spinner_item, categorias);
+        ArrayAdapter<String> spinnerAdapter = new ArrayAdapter<>(getContext(), android.R.layout.simple_spinner_item, FoodResources.CATEGORIES);
         spinnerAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
         spinner.setAdapter(spinnerAdapter);
 
-        // --- SI ESTAMOS EN MODO EDICIÓN, RELLENAMOS LOS DATOS ---
+        inputName.setOnItemClickListener((parent, view, position, id) -> {
+            String selectedFood = (String) parent.getItemAtPosition(position);
+            String autoCategory = FoodResources.getCategoryFor(selectedFood);
+            int spinnerPos = spinnerAdapter.getPosition(autoCategory);
+            if (spinnerPos >= 0) spinner.setSelection(spinnerPos);
+        });
+
         if (itemAEditar != null) {
             inputName.setText(itemAEditar.getName());
-            inputQty.setText(itemAEditar.getQuantity());
+            double cantidadNumerica = extractNumber(itemAEditar.getQuantity());
+            if (cantidadNumerica <= 0) cantidadNumerica = 0;
 
-            // Buscar la categoría del item para seleccionarla en el spinner
+            if (cantidadNumerica == (long) cantidadNumerica) {
+                inputQty.setText(String.valueOf((long) cantidadNumerica));
+            } else {
+                inputQty.setText(String.valueOf(cantidadNumerica));
+            }
+
+            String unidadTexto = extractUnit(itemAEditar.getQuantity());
+            if (unidadTexto.toLowerCase().contains("ud")) {
+                toggleGroup.check(R.id.btnUnits);
+            } else {
+                toggleGroup.check(R.id.btnGrams);
+            }
+
             String catActual = encontrarCategoriaDe(itemAEditar);
             if (catActual != null) {
                 int spinnerPosition = spinnerAdapter.getPosition(catActual);
-                spinner.setSelection(spinnerPosition);
+                if (spinnerPosition >= 0) spinner.setSelection(spinnerPosition);
             }
         }
-        // ---------------------------------------------------------
 
         AlertDialog.Builder builder = new AlertDialog.Builder(getContext());
         builder.setView(customView);
@@ -157,19 +160,28 @@ public class GalleryFragment extends Fragment {
         if (dialog.getWindow() != null) dialog.getWindow().setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
 
         btnGuardar.setOnClickListener(v -> {
-            String nombre = inputName.getText().toString().trim();
-            String cantidadInput = inputQty.getText().toString();
-            String categoriaElegida = (spinner.getSelectedItem() != null) ? spinner.getSelectedItem().toString() : "Despensa General";
+            String rawInput = inputName.getText().toString();
+            String nombre = FoodResources.getSingularName(rawInput);
+            String cantidadStr = inputQty.getText().toString();
+            String categoriaElegida = (spinner.getSelectedItem() != null) ? spinner.getSelectedItem().toString() : "Others";
 
-            if (!nombre.isEmpty()) {
-                // 1. Si estábamos editando, PRIMERO BORRAMOS el antiguo
-                // (Esto maneja automáticamente si cambiaste de categoría)
-                if (itemAEditar != null) {
-                    eliminarDeMemoria(itemAEditar);
+            // --- LÓGICA DE UNIDADES (RESPETANDO USUARIO + CORRECCIÓN) ---
+            String unidadSeleccionada;
+            if (toggleGroup.getCheckedButtonId() == R.id.btnUnits) {
+                unidadSeleccionada = "ud.";
+            } else {
+                // Si elige "g", corregimos a "ml" si es líquido
+                if (FoodResources.isLiquid(nombre)) {
+                    unidadSeleccionada = "ml";
+                } else {
+                    unidadSeleccionada = "g";
                 }
+            }
 
-                // 2. Lógica de añadir/sumar (igual que antes)
-                int iconoCorrecto = FoodResources.getIconoPara(nombre);
+            if (!nombre.isEmpty() && !cantidadStr.isEmpty()) {
+                if (itemAEditar != null) eliminarDeMemoria(itemAEditar);
+
+                int iconoCorrecto = FoodResources.getIconFor(nombre);
                 if (!despensaMap.containsKey(categoriaElegida)) {
                     despensaMap.put(categoriaElegida, new ArrayList<>());
                 }
@@ -180,65 +192,67 @@ public class GalleryFragment extends Fragment {
                 for (PantryItem item : listaActual) {
                     if (item.getName().equalsIgnoreCase(nombre)) {
                         double currentQty = extractNumber(item.getQuantity());
-                        double addedQty = extractNumber(cantidadInput);
-                        double total = currentQty + addedQty;
-                        String unit = extractUnit(item.getQuantity());
-                        if(unit.isEmpty()) unit = extractUnit(cantidadInput);
+                        double inputQtyNum = extractNumber(cantidadStr);
 
-                        String finalString = (total == (long) total) ? (long)total + " " + unit : String.format("%.1f %s", total, unit);
-                        item.setQuantity(finalString.trim());
+                        double total = (itemAEditar == null) ? (currentQty + inputQtyNum) : inputQtyNum;
+
+                        if (total <= 0) {
+                            listaActual.remove(item);
+                            Toast.makeText(getContext(), "Removed (Qty <= 0)", Toast.LENGTH_SHORT).show();
+                        } else {
+                            String finalString = (total == (long) total) ? (long)total + " " + unidadSeleccionada : String.format("%.1f %s", total, unidadSeleccionada);
+                            item.setQuantity(finalString.trim());
+                        }
                         found = true;
                         break;
                     }
                 }
 
                 if (!found) {
-                    listaActual.add(new PantryItem(nombre, cantidadInput, iconoCorrecto));
+                    double inputQtyNum = extractNumber(cantidadStr);
+                    if (inputQtyNum > 0) {
+                        String cantidadFinal = cantidadStr + " " + unidadSeleccionada;
+                        listaActual.add(new PantryItem(nombre, cantidadFinal, iconoCorrecto));
+                    }
                 }
 
                 actualizarListaVisual();
                 guardarDatosEnArchivo();
                 dialog.dismiss();
-                Toast.makeText(getContext(), (itemAEditar != null ? "Editado: " : "Guardado: ") + nombre, Toast.LENGTH_SHORT).show();
             } else {
-                inputName.setError("Revisa los campos");
+                if (nombre.isEmpty()) inputName.setError("Required");
+                if (cantidadStr.isEmpty()) inputQty.setError("Required");
             }
         });
 
         dialog.show();
     }
 
-    // Helper para borrar sin guardar en disco (usado durante la edición)
     private void eliminarDeMemoria(PantryItem item) {
         for (List<PantryItem> lista : despensaMap.values()) {
             if (lista.remove(item)) return;
         }
     }
 
-    // Helper para encontrar la categoría de un item
     private String encontrarCategoriaDe(PantryItem item) {
         for (Map.Entry<String, List<PantryItem>> entry : despensaMap.entrySet()) {
-            if (entry.getValue().contains(item)) {
-                return entry.getKey();
-            }
+            if (entry.getValue().contains(item)) return entry.getKey();
         }
         return null;
     }
 
-    // --- HELPERS MATEMÁTICOS ---
     private double extractNumber(String text) {
         try {
-            Matcher matcher = Pattern.compile("[0-9]+(\\.[0-9]+)?").matcher(text);
+            Matcher matcher = Pattern.compile("[-+]?[0-9]*\\.?[0-9]+").matcher(text);
             if (matcher.find()) return Double.parseDouble(matcher.group());
         } catch (Exception e) { }
         return 0.0;
     }
 
     private String extractUnit(String text) {
-        return text.replaceAll("[0-9.]", "").trim();
+        return text.replaceAll("[-+0-9.]", "").trim();
     }
 
-    // --- GUARDADO Y CARGA (SIN CAMBIOS) ---
     private void guardarDatosEnArchivo() {
         JSONObject rootObject = new JSONObject();
         try {
@@ -285,7 +299,7 @@ public class GalleryFragment extends Fragment {
             }
         } catch (Exception e) {
             despensaMap = new HashMap<>();
-            despensaMap.put("Despensa General", new ArrayList<>());
+            despensaMap.put("Pantry", new ArrayList<>());
         }
         actualizarListaVisual();
     }
@@ -293,9 +307,19 @@ public class GalleryFragment extends Fragment {
     private void actualizarListaVisual() {
         itemsParaMostrar.clear();
         for (Map.Entry<String, List<PantryItem>> entry : despensaMap.entrySet()) {
-            if (!entry.getValue().isEmpty()) {
-                itemsParaMostrar.add(entry.getKey());
-                itemsParaMostrar.addAll(entry.getValue());
+            String categoria = entry.getKey();
+            List<PantryItem> todosLosItems = entry.getValue();
+            List<PantryItem> itemsVisibles = new ArrayList<>();
+
+            // FILTRO: Solo mostrar positivos
+            for (PantryItem item : todosLosItems) {
+                double cantidad = extractNumber(item.getQuantity());
+                if (cantidad > 0) itemsVisibles.add(item);
+            }
+
+            if (!itemsVisibles.isEmpty()) {
+                itemsParaMostrar.add(categoria);
+                itemsParaMostrar.addAll(itemsVisibles);
             }
         }
         if (adapter != null) adapter.notifyDataSetChanged();

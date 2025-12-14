@@ -19,7 +19,7 @@
             android:background="#FF9800"
             android:gravity="center"
             android:padding="16dp"
-            android:text="Añadir a Despensa"
+            android:text="Add to pantry"
             android:textColor="#FFFFFF"
             android:textSize="20sp"
             android:textStyle="bold" />
@@ -31,45 +31,87 @@
             android:padding="20dp">
 
             <com.google.android.material.textfield.TextInputLayout
+                style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:hint="Nombre (ej. Arroz)"
-                style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox">
+                android:hint="Ingredient">
 
                 <AutoCompleteTextView
                     android:id="@+id/inputFoodName"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:inputType="textCapSentences"
-                    android:completionThreshold="1"/>
+                    android:completionThreshold="1"
+                    android:inputType="textCapSentences" />
             </com.google.android.material.textfield.TextInputLayout>
 
-
-            <com.google.android.material.textfield.TextInputLayout
+            <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="12dp"
-                android:hint="Cantidad (ej. 1 kg)"
-                style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox">
-                <com.google.android.material.textfield.TextInputEditText
-                    android:id="@+id/inputFoodQty"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"/>
-            </com.google.android.material.textfield.TextInputLayout>
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
 
+                <com.google.android.material.textfield.TextInputLayout
+                    style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:hint="Quantity">
+
+                    <com.google.android.material.textfield.TextInputEditText
+                        android:id="@+id/inputFoodQty"
+                        android:inputType="numberDecimal"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content" />
+                </com.google.android.material.textfield.TextInputLayout>
+
+                <com.google.android.material.button.MaterialButtonToggleGroup
+                    android:id="@+id/toggleUnit"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="8dp"
+                    app:checkedButton="@+id/btnGrams"
+                    app:selectionRequired="true"
+                    app:singleSelection="true">
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnGrams"
+                        style="?attr/materialButtonOutlinedStyle"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:minWidth="0dp"
+                        android:paddingHorizontal="16dp"
+                        android:text="g"
+                        android:textColor="#FF9800"
+                        app:strokeColor="#FF9800" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnUnits"
+                        style="?attr/materialButtonOutlinedStyle"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:minWidth="0dp"
+                        android:paddingHorizontal="16dp"
+                        android:text="ud."
+                        android:textColor="#FF9800"
+                        app:strokeColor="#FF9800" />
+
+                </com.google.android.material.button.MaterialButtonToggleGroup>
+
+            </LinearLayout>
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="16dp"
-                android:text="Categoría:"
-                android:textStyle="bold"/>
+                android:text="Category"
+                android:textStyle="bold" />
 
             <Spinner
                 android:id="@+id/spinnerCategory"
                 android:layout_width="match_parent"
                 android:layout_height="48dp"
                 android:layout_marginTop="8dp"
-                android:background="@android:drawable/btn_dropdown"/>
+                android:background="@android:drawable/btn_dropdown" />
 
         </LinearLayout>
 
@@ -78,9 +120,9 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginHorizontal="20dp"
-            android:text="Guardar Producto"
             android:backgroundTint="#FF9800"
-            android:textColor="#FFFFFF"/>
+            android:text="Saved"
+            android:textColor="#FFFFFF" />
 
     </LinearLayout>
 </androidx.cardview.widget.CardView>

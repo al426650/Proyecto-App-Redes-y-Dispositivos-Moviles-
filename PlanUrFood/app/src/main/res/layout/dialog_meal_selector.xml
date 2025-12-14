@@ -38,14 +38,13 @@
             android:padding="10dp"/>
 
         <Button
-            android:id="@+id/btnNewRecipe"
+            android:id="@+id/btnDeleteRecipe"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_margin="16dp"
-            android:text="+ Añadir Nueva Receta"
-            android:backgroundTint="#FF9800"
+            android:text="Borrar del Menú"
+            android:backgroundTint="#F44336"
             android:textColor="#FFFFFF"/>
 
     </LinearLayout>
-
 </androidx.cardview.widget.CardView>
