@@ -8,96 +8,85 @@ import android.widget.TextView;
 import androidx.annotation.NonNull;
 import androidx.recyclerview.widget.RecyclerView;
 import com.example.planurfood.R;
-
 import java.util.List;
 
 public class PantryAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
 
-    // Definimos dos tipos de vista: Cabecera y Producto
     private static final int TYPE_HEADER = 0;
-    private static final int TYPE_PRODUCT = 1;
+    private static final int TYPE_ITEM = 1;
 
-    // La lista de datos contendrá TANTO Strings (cabeceras) COMO PantryItems (productos)
-    private final List<Object> itemList;
+    private final List<Object> items;
+    private final OnPantryClickListener listener; // Nuevo listener
 
-    public PantryAdapter(List<Object> itemList) {
-        this.itemList = itemList;
+    // Interfaz para comunicarse con el Fragment
+    public interface OnPantryClickListener {
+        void onItemClick(PantryItem item);
     }
 
-    // Este método es el cerebro: le dice al Adapter qué tipo de fila es la posición actual
+    public PantryAdapter(List<Object> items, OnPantryClickListener listener) {
+        this.items = items;
+        this.listener = listener;
+    }
+
     @Override
     public int getItemViewType(int position) {
-        if (itemList.get(position) instanceof String) {
-            return TYPE_HEADER; // Si es un texto, es cabecera
-        } else {
-            return TYPE_PRODUCT; // Si es un PantryItem, es producto
-        }
+        if (items.get(position) instanceof String) return TYPE_HEADER;
+        return TYPE_ITEM;
     }
 
-    // Aquí decidimos qué XML inflar según el tipo
     @NonNull
     @Override
     public RecyclerView.ViewHolder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
-        LayoutInflater inflater = LayoutInflater.from(parent.getContext());
         if (viewType == TYPE_HEADER) {
-            View view = inflater.inflate(R.layout.item_pantry_header, parent, false);
+            View view = LayoutInflater.from(parent.getContext()).inflate(R.layout.item_pantry_header, parent, false);
             return new HeaderViewHolder(view);
         } else {
-            View view = inflater.inflate(R.layout.item_pantry_product, parent, false);
-            return new ProductViewHolder(view);
+            View view = LayoutInflater.from(parent.getContext()).inflate(R.layout.item_pantry_product, parent, false);
+            return new ItemViewHolder(view);
         }
     }
 
     @Override
     public void onBindViewHolder(@NonNull RecyclerView.ViewHolder holder, int position) {
-        if (holder.getItemViewType() == TYPE_HEADER) {
-            // Es una cabecera
-            String title = (String) itemList.get(position);
-            ((HeaderViewHolder) holder).textHeaderTitle.setText(title);
+        if (getItemViewType(position) == TYPE_HEADER) {
+            ((HeaderViewHolder) holder).title.setText((String) items.get(position));
         } else {
-            // Es un producto
-            PantryItem item = (PantryItem) itemList.get(position);
-            ProductViewHolder productHolder = (ProductViewHolder) holder;
-            productHolder.textProductName.setText(item.getName());
-            productHolder.textProductQuantity.setText("(" + item.getQuantity() + ")");
-            productHolder.imgProductIcon.setImageResource(item.getIconResId());
+            PantryItem item = (PantryItem) items.get(position);
+            ItemViewHolder itemHolder = (ItemViewHolder) holder;
 
-            // Aquí configurarías el clic en los 3 puntos (btnMoreOptions)
-            productHolder.btnMoreOptions.setOnClickListener(v -> {
-                // Lógica para abrir menú de opciones (borrar, editar...)
-            });
+            itemHolder.name.setText(item.getName());
+            itemHolder.qty.setText(item.getQuantity());
+            itemHolder.icon.setImageResource(item.getIconResId());
+
+            // --- DETECTAR CLIC ---
+            itemHolder.itemView.setOnClickListener(v -> listener.onItemClick(item));
         }
     }
 
     @Override
-    public int getItemCount() {
-        return itemList.size();
+    public int getItemCount() { return items.size(); }
+
+    // Método para obtener el objeto en una posición (usado para el Swipe)
+    public Object getItemAt(int position) {
+        return items.get(position);
     }
 
-    // --- VIEW HOLDERS ---
-
-    // ViewHolder para la Cabecera
     static class HeaderViewHolder extends RecyclerView.ViewHolder {
-        TextView textHeaderTitle;
-        HeaderViewHolder(@NonNull View itemView) {
-            super(itemView);
-            textHeaderTitle = itemView.findViewById(R.id.textHeaderTitle);
+        TextView title;
+        HeaderViewHolder(View v) {
+            super(v);
+            title = v.findViewById(R.id.headerTitle);
         }
     }
 
-    // ViewHolder para el Producto
-    static class ProductViewHolder extends RecyclerView.ViewHolder {
-        TextView textProductName;
-        TextView textProductQuantity;
-        ImageView imgProductIcon;
-        ImageView btnMoreOptions;
-
-        ProductViewHolder(@NonNull View itemView) {
-            super(itemView);
-            textProductName = itemView.findViewById(R.id.textProductName);
-            textProductQuantity = itemView.findViewById(R.id.textProductQuantity);
-            imgProductIcon = itemView.findViewById(R.id.imgProductIcon);
-            btnMoreOptions = itemView.findViewById(R.id.btnMoreOptions);
+    static class ItemViewHolder extends RecyclerView.ViewHolder {
+        TextView name, qty;
+        ImageView icon;
+        ItemViewHolder(View v) {
+            super(v);
+            name = v.findViewById(R.id.productName);
+            qty = v.findViewById(R.id.productQty);
+            icon = v.findViewById(R.id.productIcon);
         }
     }
 }

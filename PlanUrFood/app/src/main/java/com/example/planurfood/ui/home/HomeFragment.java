@@ -53,6 +53,7 @@ public class HomeFragment extends Fragment {
     private Map<String, Map<String, List<String>>> libroDeRecetas = new HashMap<>();
     private Map<String, String> menuSemanal = new HashMap<>();
     private static final String ARCHIVO_PLAN = "listacompra.json";
+    private static final String ARCHIVO_PANTRY = "midestpensa.json";
 
     public View onCreateView(@NonNull LayoutInflater inflater,
                              ViewGroup container, Bundle savedInstanceState) {
@@ -352,6 +353,24 @@ public class HomeFragment extends Fragment {
 
         AlertDialog.Builder builder = new AlertDialog.Builder(getContext());
         builder.setView(customView);
+
+        // --- NUEVO: Botón para Borrar la selección actual ---
+        builder.setNeutralButton("Errase", (dialog, which) -> {
+            // 1. Limpiamos el texto visualmente
+            cajon.setText("");
+
+            // 2. Quitamos la receta del mapa de memoria
+            menuSemanal.remove(dia + "_" + tipoComida);
+
+            // 3. Guardamos los cambios en el archivo para que no vuelva a aparecer
+            guardarPlanSemanal();
+
+            Toast.makeText(getContext(), "Plan borrado", Toast.LENGTH_SHORT).show();
+        });
+
+        // Botón cancelar normal
+        builder.setNegativeButton("Close", null);
+
         AlertDialog dialog = builder.create();
         if (dialog.getWindow() != null) dialog.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT));
 
@@ -359,12 +378,11 @@ public class HomeFragment extends Fragment {
             String receta = nombresRecetas.get(position);
             if (!receta.equals("No hay recetas disponibles")) {
                 cajon.setText(receta);
-
-                // Actualizamos el mapa en memoria
                 menuSemanal.put(dia + "_" + tipoComida, receta);
-
-                // GUARDAMOS EN ARCHIVO INMEDIATAMENTE
                 guardarPlanSemanal();
+
+                // Descontamos ingredientes (OJO: Esto sigue restando si cambias de receta)
+                descontarIngredientesDeDespensa(receta, tipoComida);
 
                 dialog.dismiss();
             }
@@ -377,28 +395,180 @@ public class HomeFragment extends Fragment {
     }
 
     private void generarYMostrarListaCompra() {
-        Set<String> unicos = new HashSet<>();
-        for (String receta : menuSemanal.values()) {
+        Map<String, Double> necesito = new HashMap<>();
+        Map<String, Double> tengo = new HashMap<>();
+
+        // 1. SUMAR LO QUE NECESITO (Del Menú Semanal)
+        for (String nombreReceta : menuSemanal.values()) {
+            // Buscar receta en las 3 categorías (Breakfast, Lunch, Dinner)
             for (Map<String, List<String>> cat : libroDeRecetas.values()) {
-                if (cat.containsKey(receta)) {
-                    List<String> ings = cat.get(receta);
-                    if (ings != null) unicos.addAll(ings);
+                if (cat.containsKey(nombreReceta)) {
+                    for (String ing : cat.get(nombreReceta)) {
+                        // Si el ingrediente es "Arroz (200)", sacamos "arroz" y 200.0
+                        String nombre = ing.split("\\(")[0].trim().toLowerCase();
+                        necesito.put(nombre, necesito.getOrDefault(nombre, 0.0) + extraerNumero(ing));
+                    }
                 }
             }
         }
-        if (unicos.isEmpty()) {
-            Toast.makeText(getContext(), "Planifica comidas primero.", Toast.LENGTH_SHORT).show();
+
+        // 2. VER LO QUE TENGO (Leer archivo Pantry)
+        try {
+            FileInputStream fis = requireActivity().openFileInput("midestpensa.json"); // Tu archivo
+            BufferedReader reader = new BufferedReader(new InputStreamReader(fis));
+            StringBuilder jsonStr = new StringBuilder();
+            String line;
+            while ((line = reader.readLine()) != null) jsonStr.append(line);
+
+            JSONObject json = new JSONObject(jsonStr.toString());
+            Iterator<String> keys = json.keys();
+            while (keys.hasNext()) { // Recorrer categorías
+                org.json.JSONArray items = json.getJSONArray(keys.next());
+                for (int i = 0; i < items.length(); i++) {
+                    JSONObject item = items.getJSONObject(i);
+                    String nombre = item.getString("nombre").toLowerCase();
+                    tengo.put(nombre, tengo.getOrDefault(nombre, 0.0) + extraerNumero(item.getString("cantidad")));
+                }
+            }
+        } catch (Exception e) { /* Si falla, asumimos despensa vacía */ }
+
+        // 3. CALCULAR Y MOSTRAR
+        ArrayList<String> listaFinal = new ArrayList<>();
+        for (String ingrediente : necesito.keySet()) {
+            double cantidadFaltante = necesito.get(ingrediente) - tengo.getOrDefault(ingrediente, 0.0);
+
+            if (cantidadFaltante > 0) {
+                listaFinal.add(ingrediente.toUpperCase() + " (Missing: " + (int)cantidadFaltante + ")");
+            }
+        }
+
+        if (listaFinal.isEmpty()) {
+            Toast.makeText(getContext(), "You already have everything!", Toast.LENGTH_SHORT).show();
+        } else {
+            new AlertDialog.Builder(getContext())
+                    .setTitle("TO BUY")
+                    .setMultiChoiceItems(listaFinal.toArray(new String[0]), null, null)
+                    .setPositiveButton("Close", null)
+                    .show();
+        }
+    }
+
+
+    private void descontarIngredientesDeDespensa(String nombreReceta, String tipoComida) {
+        // 1. Buscamos qué ingredientes tiene esa receta
+        // Nota: 'tipoComida' viene como "Breakfast", pero tu mapa puede tener "breakfast".
+        String keyMap = tipoComida.toLowerCase();
+        if(keyMap.equals("diner")) keyMap = "dinner";
+
+        if (!libroDeRecetas.containsKey(keyMap) || !libroDeRecetas.get(keyMap).containsKey(nombreReceta)) {
+            return; // No encontramos la receta
+        }
+
+        List<String> ingredientesReceta = libroDeRecetas.get(keyMap).get(nombreReceta);
+        if (ingredientesReceta == null || ingredientesReceta.isEmpty()) return;
+
+        // 2. Cargamos la despensa actual
+        JSONObject pantryRoot = new JSONObject();
+        try {
+            FileInputStream fis = requireActivity().openFileInput(ARCHIVO_PANTRY);
+            InputStreamReader isr = new InputStreamReader(fis);
+            BufferedReader reader = new BufferedReader(isr);
+            StringBuilder sb = new StringBuilder();
+            String line;
+            while ((line = reader.readLine()) != null) sb.append(line);
+            fis.close();
+
+            pantryRoot = new JSONObject(sb.toString());
+
+        } catch (Exception e) {
+            // Si no existe la despensa, no podemos restar nada
             return;
         }
 
-        String[] items = unicos.toArray(new String[0]);
-        boolean[] checked = new boolean[items.length];
+        // 3. Procesamos la resta
+        boolean huboCambios = false;
 
-        new AlertDialog.Builder(getContext())
-                .setTitle("Lista de la Compra")
-                .setMultiChoiceItems(items, checked, (d, w, c) -> checked[w] = c)
-                .setPositiveButton("Cerrar", null)
-                .show();
+        try {
+            // Convertimos la lista de ingredientes de la receta (Strings) en un Mapa para buscar rápido
+            // Ejemplo receta: "Huevos (2)", "Leche (200)" -> Map: "Huevos":2, "Leche":200
+            Map<String, Double> requisitos = new HashMap<>();
+            for (String linea : ingredientesReceta) {
+                // Formato esperado: "Nombre (Cantidad)" o simplemente "Nombre"
+                String nombre = linea;
+                double cantidad = 1.0;
+
+                if (linea.contains("(") && linea.contains(")")) {
+                    nombre = linea.substring(0, linea.indexOf("(")).trim();
+                    String cantStr = linea.substring(linea.indexOf("(") + 1, linea.indexOf(")"));
+                    cantidad = extraerNumero(cantStr);
+                }
+                requisitos.put(nombre.toLowerCase(), cantidad);
+            }
+
+            // Recorremos la despensa JSON buscando coincidencias
+            Iterator<String> categorias = pantryRoot.keys();
+            while (categorias.hasNext()) {
+                String cat = categorias.next();
+                org.json.JSONArray items = pantryRoot.getJSONArray(cat);
+
+                for (int i = 0; i < items.length(); i++) {
+                    JSONObject item = items.getJSONObject(i);
+                    String nombreItem = item.getString("nombre").toLowerCase();
+
+                    if (requisitos.containsKey(nombreItem)) {
+                        // ¡Coincidencia! Restamos
+                        double aRestar = requisitos.get(nombreItem);
+                        String stockStr = item.getString("cantidad");
+                        double stockActual = extraerNumero(stockStr);
+                        String unidad = stockStr.replaceAll("[0-9.]", "").trim(); // Guardamos "kg", "uds"
+
+                        double nuevoStock = stockActual - aRestar;
+                        if (nuevoStock < 0) nuevoStock = 0;
+
+                        // Guardamos el nuevo valor manteniendo la unidad (Ej: "4.0 uds")
+                        // Usamos Math.round para evitar decimales feos si son enteros
+                        nuevoStock = stockActual - aRestar;
+                        if (nuevoStock < 0) nuevoStock = 0;
+
+
+                        if (nuevoStock == (long) nuevoStock) {
+                            item.put("cantidad", String.format("%d %s", (long)nuevoStock, unidad).trim());
+                        } else {
+                            item.put("cantidad", String.format("%.1f %s", nuevoStock, unidad).trim());
+                        }
+                        huboCambios = true;
+
+                        // Notificamos al usuario
+                        final String msg = "Descontado: " + item.getString("nombre");
+                        requireActivity().runOnUiThread(() ->
+                                Toast.makeText(getContext(), msg, Toast.LENGTH_SHORT).show()
+                        );
+                    }
+                }
+            }
+
+            // 4. Si hubo cambios, guardamos el archivo Pantry actualizado
+            if (huboCambios) {
+                FileOutputStream fos = requireActivity().openFileOutput(ARCHIVO_PANTRY, MODE_PRIVATE);
+                fos.write(pantryRoot.toString().getBytes());
+                fos.close();
+            }
+
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+    // Función auxiliar para sacar números de un texto ("2 kg" -> 2.0)
+    private double extraerNumero(String texto) {
+        try {
+            // Busca el primer número (entero o decimal) que encuentre
+            java.util.regex.Matcher matcher = java.util.regex.Pattern.compile("[0-9]+(\\.[0-9]+)?").matcher(texto);
+            if (matcher.find()) {
+                return Double.parseDouble(matcher.group());
+            }
+        } catch (Exception e) { }
+        return 1.0; // Valor por defecto si no hay número
     }
 
     @Override

@@ -2,14 +2,24 @@
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:background="#E0E0E0" android:padding="12dp">
+    android:orientation="vertical"
+    android:paddingTop="16dp"
+    android:paddingBottom="8dp"
+    android:paddingStart="16dp"
+    android:paddingEnd="16dp">
 
     <TextView
-        android:id="@+id/textHeaderTitle"
-        android:layout_width="wrap_content"
+        android:id="@+id/headerTitle"
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="Categoría de Ejemplo"
+        android:text="Category"
         android:textSize="18sp"
         android:textStyle="bold"
-        android:textColor="#000000"/>
+        android:textColor="@color/black" />
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:background="#CCCCCC"
+        android:layout_marginTop="4dp"/>
 </LinearLayout>
