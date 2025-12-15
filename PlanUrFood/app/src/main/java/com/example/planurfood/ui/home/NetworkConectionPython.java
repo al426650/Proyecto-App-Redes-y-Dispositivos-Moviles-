@@ -98,6 +98,11 @@ public class NetworkConectionPython extends  Thread{
         msg.arg1 = 0;
         msg.obj = "CAMERA";
         handlerNetworkExecutor.sendMessage(msg);
+        try {
+            Thread.sleep(1000);
+        } catch (InterruptedException e) {
+            throw new RuntimeException(e);
+        }
         // Versión python
 
         if (!Python.isStarted()) {

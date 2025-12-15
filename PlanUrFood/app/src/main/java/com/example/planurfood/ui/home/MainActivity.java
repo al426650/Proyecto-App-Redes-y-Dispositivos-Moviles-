@@ -157,7 +157,7 @@ public class MainActivity extends AppCompatActivity {
         Bitmap resizedBitmap = Bitmap.createScaledBitmap(originalBitmap, 80, 107,
                 true);
         ByteArrayOutputStream blob = new ByteArrayOutputStream();
-        resizedBitmap.compress(Bitmap.CompressFormat.JPEG, 75, blob);
+        resizedBitmap.compress(Bitmap.CompressFormat.JPEG, 100, blob);
         return blob.toByteArray();
     }
     android.hardware.Camera.PictureCallback mPicture = new android.hardware.Camera.PictureCallback() {
@@ -173,8 +173,8 @@ public class MainActivity extends AppCompatActivity {
                 FileOutputStream fos = new FileOutputStream(pictureFile);
                 fos.write(resized);
                 fos.close();
-                //mCamera.stopPreview();
-                //mCamera.startPreview();
+                mCamera.stopPreview();
+                mCamera.startPreview();
                 Log.e("Camera", "Camera_reiniciada");
             } catch (Exception e) {
                 Log.e("onPictureTaken", "ERROR:" + e);

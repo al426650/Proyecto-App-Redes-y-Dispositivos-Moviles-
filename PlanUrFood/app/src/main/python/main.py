@@ -1,6 +1,5 @@
 import json
 import requests
-from PIL import Image
 
 def request_yolo(file_path):
 # Run inference on an image
