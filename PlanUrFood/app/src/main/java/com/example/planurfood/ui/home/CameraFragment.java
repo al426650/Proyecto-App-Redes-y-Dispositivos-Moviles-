@@ -160,23 +160,22 @@ public class CameraFragment extends Fragment {
         try {
             // Limpieza por si Python devuelve comillas simples
             String jsonFormat = jsonRaw.replace("'", "\"").replace("None", "null");
-            JSONArray resultados = new JSONArray(jsonFormat);
-
-            for (int i = 0; i < resultados.length(); i++) {
-                JSONObject item = resultados.getJSONObject(i);
-                if (item.has("name")) {
-                    String nombre = item.getString("name").toLowerCase();
-                    detectados.add(nombre);
-                    addToPantry(jsonPantry, nombre, 1.0);
-                    huboCambios = true;
-                }
+            JSONObject resultados = new JSONObject(jsonFormat);
+            JSONArray imagenes = resultados.getJSONArray("images");
+            JSONObject results = imagenes.getJSONObject(0);
+            JSONArray results2 = results.getJSONArray("results");
+            for (int i = 0; i < results2.length(); i++) {
+                JSONObject nombre = results2.getJSONObject(i);
+                String name = nombre.getString("name");
+                detectados.add(name);
+                addToPantry(jsonPantry, name, 1.0);
+                huboCambios = true;
+                Log.e("JSON", jsonPantry.toString());
             }
-
             if (huboCambios) {
                 guardarJSON("midestpensa.json", jsonPantry);
                 txtStatus.setText("Añadido: " + detectados.toString());
                 Toast.makeText(getContext(), "Guardado correctamente", Toast.LENGTH_SHORT).show();
-
                 // Volver atrás tras 2 seg
                 new Handler().postDelayed(() -> Navigation.findNavController(getView()).navigateUp(), 2000);
             } else {
@@ -217,7 +216,9 @@ public class CameraFragment extends Fragment {
                 newItem.put("imagen", FoodResources.getIconFor(nombreCap));
                 list.put(newItem);
             }
-        } catch (Exception e){}
+        } catch (Exception e){
+            Log.e("ERROR", e.toString());
+        }
     }
 
     private JSONObject leerJSON(String archivo) {
