@@ -73,7 +73,8 @@ public class GalleryFragment extends Fragment {
 
         // Listener Cámara (Nuevo)
         binding.fabCameraUpdate.setOnClickListener(v -> {
-            Toast.makeText(getContext(), "Próximamente: Escanear despensa con IA", Toast.LENGTH_SHORT).show();
+            // Navegar usando el ID que acabamos de poner en el XML
+            androidx.navigation.Navigation.findNavController(v).navigate(R.id.nav_camera);
         });
 
         return root;

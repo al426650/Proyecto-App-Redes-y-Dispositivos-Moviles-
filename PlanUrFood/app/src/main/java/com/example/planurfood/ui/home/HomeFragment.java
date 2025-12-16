@@ -560,5 +560,100 @@ public class HomeFragment extends Fragment {
         } catch (Exception e) { e.printStackTrace(); }
     }
 
-    private void step1_PedirNombre() {}
+    // --- LÓGICA RECUPERADA PARA AÑADIR RECETAS ---
+
+    private void step1_PedirNombre() {
+        AlertDialog.Builder builder = new AlertDialog.Builder(getContext());
+        builder.setTitle("Nueva Receta: Nombre");
+        final TextInputEditText input = new TextInputEditText(getContext());
+        builder.setView(input);
+
+        builder.setPositiveButton("Siguiente", (dialog, which) -> {
+            String nombre = input.getText().toString();
+            if (!nombre.isEmpty()) {
+                step2_PedirTipo(nombre);
+            }
+        });
+        builder.setNegativeButton("Cancelar", (dialog, which) -> dialog.cancel());
+        builder.show();
+    }
+
+    private void step2_PedirTipo(String nombreReceta) {
+        AlertDialog.Builder builder = new AlertDialog.Builder(getContext());
+        builder.setTitle("¿Para qué comida es?");
+        String[] tipos = {"Breakfast", "Lunch", "Dinner"};
+
+        builder.setItems(tipos, (dialog, which) -> {
+            String tipoSeleccionado = tipos[which].toLowerCase();
+            step3_PedirIngredientes(nombreReceta, tipoSeleccionado);
+        });
+        builder.show();
+    }
+
+    private void step3_PedirIngredientes(String nombreReceta, String tipoComida) {
+        AlertDialog.Builder builder = new AlertDialog.Builder(getContext());
+        builder.setTitle("Ingredientes (separados por coma)");
+        final TextInputEditText input = new TextInputEditText(getContext());
+        input.setHint("Ej: 2 huevos, 100g harina...");
+        builder.setView(input);
+
+        builder.setPositiveButton("Guardar", (dialog, which) -> {
+            String rawIngredientes = input.getText().toString();
+            if (!rawIngredientes.isEmpty()) {
+                guardarNuevaReceta(nombreReceta, tipoComida, rawIngredientes);
+            }
+        });
+        builder.show();
+    }
+
+    private void guardarNuevaReceta(String nombre, String categoria, String ingredientesRaw) {
+        // 1. Guardar en Memoria (libroDeRecetas)
+        if (!libroDeRecetas.containsKey(categoria)) {
+            libroDeRecetas.put(categoria, new HashMap<>());
+        }
+
+        List<String> listaIng = new ArrayList<>();
+        String[] partes = ingredientesRaw.split(",");
+        for (String p : partes) {
+            listaIng.add(p.trim());
+        }
+
+        libroDeRecetas.get(categoria).put(nombre, listaIng);
+
+        // 2. Guardar en Archivo Caché (recetas_cache.json) para persistencia local
+        try {
+            JSONObject cache = new JSONObject();
+            // Leemos lo que había o creamos nuevo
+            try {
+                FileInputStream fis = requireActivity().openFileInput(ARCHIVO_RECETAS_CACHE);
+                BufferedReader reader = new BufferedReader(new InputStreamReader(fis));
+                StringBuilder sb = new StringBuilder();
+                String line;
+                while ((line = reader.readLine()) != null) sb.append(line);
+                cache = new JSONObject(sb.toString());
+            } catch (Exception e) {
+                // Si no existe, estructura base
+                cache.put("breakfast", new JSONObject());
+                cache.put("lunch", new JSONObject());
+                cache.put("dinner", new JSONObject());
+            }
+
+            // Añadimos la nueva
+            JSONArray jsonIngs = new JSONArray();
+            for (String ing : listaIng) jsonIngs.put(ing);
+
+            if (!cache.has(categoria)) cache.put(categoria, new JSONObject());
+            cache.getJSONObject(categoria).put(nombre, jsonIngs);
+
+            FileOutputStream fos = requireActivity().openFileOutput(ARCHIVO_RECETAS_CACHE, MODE_PRIVATE);
+            fos.write(cache.toString().getBytes());
+            fos.close();
+
+            Toast.makeText(getContext(), "Receta guardada localmente", Toast.LENGTH_SHORT).show();
+
+        } catch (Exception e) {
+            e.printStackTrace();
+            Toast.makeText(getContext(), "Error guardando receta", Toast.LENGTH_SHORT).show();
+        }
+    }
 }
