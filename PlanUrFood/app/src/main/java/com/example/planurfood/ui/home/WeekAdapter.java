@@ -52,7 +52,7 @@ public class WeekAdapter extends RecyclerView.Adapter<WeekAdapter.WeekViewHolder
         // CORRECCIÓN 3: Usamos 'holder.input...' en vez de 'holder.et...'
         holder.inputBreakfast.setText(desayuno != null ? desayuno : "");
         holder.inputLunch.setText(comida != null ? comida : "");
-        holder.inputDiner.setText(cena != null ? cena : "");
+        holder.inputdinner.setText(cena != null ? cena : "");
 
         // Listeners
         holder.inputBreakfast.setOnClickListener(v -> {
@@ -63,9 +63,9 @@ public class WeekAdapter extends RecyclerView.Adapter<WeekAdapter.WeekViewHolder
             listener.onMealClick(dayName, "Lunch", holder.inputLunch);
         });
 
-        holder.inputDiner.setOnClickListener(v -> {
+        holder.inputdinner.setOnClickListener(v -> {
             // Pasamos "Dinner" para que la clave del Map se guarde bien (MONDAY_Dinner)
-            listener.onMealClick(dayName, "Dinner", holder.inputDiner);
+            listener.onMealClick(dayName, "Dinner", holder.inputdinner);
         });
     }
 
@@ -78,14 +78,14 @@ public class WeekAdapter extends RecyclerView.Adapter<WeekAdapter.WeekViewHolder
         TextView textDayName;
         TextInputEditText inputBreakfast;
         TextInputEditText inputLunch;
-        TextInputEditText inputDiner;
+        TextInputEditText inputdinner;
 
         public WeekViewHolder(@NonNull View itemView) {
             super(itemView);
             textDayName = itemView.findViewById(R.id.textDayName);
             inputBreakfast = itemView.findViewById(R.id.inputBreakfast);
             inputLunch = itemView.findViewById(R.id.inputLunch);
-            inputDiner = itemView.findViewById(R.id.inputDiner);
+            inputdinner = itemView.findViewById(R.id.inputdinner);
         }
     }
 }

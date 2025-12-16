@@ -11,8 +11,6 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.ArrayAdapter;
 import android.widget.Button;
-import android.widget.FrameLayout;
-import android.widget.LinearLayout;
 import android.widget.ListView;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -20,14 +18,13 @@ import android.widget.Toast;
 import androidx.annotation.NonNull;
 import androidx.fragment.app.Fragment;
 import androidx.recyclerview.widget.LinearLayoutManager;
-import androidx.recyclerview.widget.RecyclerView;
 
 import com.example.planurfood.R;
 import com.example.planurfood.databinding.FragmentHomeBinding;
 import com.example.planurfood.ui.gallery.FoodResources;
 import com.google.android.material.textfield.TextInputEditText;
 
-import org.json.JSONException;
+import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.BufferedReader;
@@ -50,10 +47,17 @@ import retrofit2.Response;
 public class HomeFragment extends Fragment {
 
     private FragmentHomeBinding binding;
+
+    // Memoria
     private Map<String, Map<String, List<String>>> libroDeRecetas = new HashMap<>();
     private Map<String, String> menuSemanal = new HashMap<>();
-    private static final String ARCHIVO_PLAN = "listacompra.json";
+
+    // Archivos
+    private static final String ARCHIVO_PLAN = "plan_semanal.json";
     private static final String ARCHIVO_PANTRY = "midestpensa.json";
+    private static final String ARCHIVO_COMPRA = "lista_compra.json";
+    private static final String ARCHIVO_RECETAS_CACHE = "recetas_cache.json";
+
     private WeekAdapter weekAdapter;
 
     public View onCreateView(@NonNull LayoutInflater inflater,
@@ -68,22 +72,373 @@ public class HomeFragment extends Fragment {
                 "MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY", "SUNDAY"
         ));
 
-        RecyclerView recyclerView = binding.recyclerWeek;
-        if (recyclerView != null) {
-            recyclerView.setLayoutManager(new LinearLayoutManager(getContext()));
-            weekAdapter = new WeekAdapter(diasSemana, menuSemanal, (dia, tipoComida, cajonTocado) ->
-                    mostrarSelectorDeRecetas(dia, tipoComida, cajonTocado)
-            );
-            recyclerView.setAdapter(weekAdapter);
-        }
+        binding.recyclerWeek.setLayoutManager(new LinearLayoutManager(getContext()));
+        weekAdapter = new WeekAdapter(diasSemana, menuSemanal, (dia, tipoComida, cajonTocado) ->
+                mostrarSelectorDeRecetas(dia, tipoComida, cajonTocado)
+        );
+        binding.recyclerWeek.setAdapter(weekAdapter);
 
-        binding.fabShoppingList.setOnClickListener(v -> generarYMostrarListaCompra());
+        binding.fabShoppingList.setOnClickListener(v -> mostrarListaCompra());
         binding.fabAddRecipe.setOnClickListener(v -> step1_PedirNombre());
 
         return root;
     }
 
-    // --- ZONA 1: PERSISTENCIA ---
+    // =========================================================================
+    // LOGICA PRINCIPAL: GESTIÓN DE STOCK Y LISTA COMPRA
+    // =========================================================================
+
+    private void procesarIngredientesReceta(String nombreReceta, String tipoComida, boolean esAnadir) {
+        String keyMap = tipoComida.toLowerCase().trim();
+        if(keyMap.equals("diner")) keyMap = "dinner";
+
+        if (!libroDeRecetas.containsKey(keyMap) || !libroDeRecetas.get(keyMap).containsKey(nombreReceta)) return;
+
+        List<String> ingredientesNecesarios = libroDeRecetas.get(keyMap).get(nombreReceta);
+
+        JSONObject jsonPantry = leerJSON(ARCHIVO_PANTRY);
+        JSONObject jsonCompra = leerJSON(ARCHIVO_COMPRA);
+
+        // Mapeo de stock actual
+        Map<String, Double> stockMap = new HashMap<>();
+        Map<String, JSONObject> refMap = new HashMap<>();
+
+        try {
+            Iterator<String> keys = jsonPantry.keys();
+            while (keys.hasNext()) {
+                String cat = keys.next();
+                JSONArray items = jsonPantry.getJSONArray(cat);
+                for (int i = 0; i < items.length(); i++) {
+                    JSONObject item = items.getJSONObject(i);
+                    String n = limpiarNombre(item.getString("nombre"));
+                    double q = extraerNumero(item.getString("cantidad"));
+                    stockMap.put(n, stockMap.getOrDefault(n, 0.0) + q);
+                    if (!refMap.containsKey(n)) refMap.put(n, item);
+                }
+            }
+        } catch (Exception e) {}
+
+        boolean pantryChanged = false;
+        boolean compraChanged = false;
+
+        for (String ingRaw : ingredientesNecesarios) {
+            String nombreIng = limpiarNombre(ingRaw);
+            double cantidadNecesaria = extraerNumero(ingRaw);
+            if(cantidadNecesaria <= 0) cantidadNecesaria = 1.0;
+
+            if (esAnadir) {
+                // AÑADIR: Restar de despensa, si falta -> lista compra
+                double stockDisponible = stockMap.getOrDefault(nombreIng, 0.0);
+
+                if (stockDisponible >= cantidadNecesaria) {
+                    actualizarItemPantry(refMap.get(nombreIng), stockDisponible - cantidadNecesaria, nombreIng);
+                    stockMap.put(nombreIng, stockDisponible - cantidadNecesaria);
+                    pantryChanged = true;
+                } else {
+                    double loQueTengo = stockDisponible;
+                    double loQueFalta = cantidadNecesaria - loQueTengo;
+
+                    if (loQueTengo > 0) {
+                        actualizarItemPantry(refMap.get(nombreIng), 0.0, nombreIng);
+                        stockMap.put(nombreIng, 0.0);
+                        pantryChanged = true;
+                    }
+                    agregarAListaCompra(jsonCompra, nombreIng, loQueFalta);
+                    compraChanged = true;
+                }
+            } else {
+                // BORRAR RECETA: Devolución inteligente
+                double cantidadEnListaCompra = obtenerCantidadEnListaCompra(jsonCompra, nombreIng);
+
+                if (cantidadEnListaCompra > 0) {
+                    // Si estaba en la lista de compra, lo quitamos de ahí (porque nunca lo compramos)
+                    double aQuitarDeCompra = Math.min(cantidadEnListaCompra, cantidadNecesaria);
+                    restarDeListaCompra(jsonCompra, nombreIng, aQuitarDeCompra);
+                    compraChanged = true;
+
+                    // Si sobró algo (raro), eso sí vuelve a despensa
+                    double restoParaDespensa = cantidadNecesaria - aQuitarDeCompra;
+                    if (restoParaDespensa > 0.01) {
+                        devolverADespensa(jsonPantry, refMap, nombreIng, restoParaDespensa);
+                        pantryChanged = true;
+                    }
+                } else {
+                    // Si no estaba en lista compra, es que lo gastamos de la despensa. Lo devolvemos.
+                    devolverADespensa(jsonPantry, refMap, nombreIng, cantidadNecesaria);
+                    pantryChanged = true;
+                }
+            }
+        }
+
+        if (pantryChanged) guardarJSON(ARCHIVO_PANTRY, jsonPantry);
+        if (compraChanged) guardarJSON(ARCHIVO_COMPRA, jsonCompra);
+    }
+
+    // --- Helpers de Gestión ---
+
+    private void devolverADespensa(JSONObject jsonPantry, Map<String, JSONObject> refMap, String nombreIng, double cantidad) {
+        try {
+            if (refMap.containsKey(nombreIng)) {
+                JSONObject item = refMap.get(nombreIng);
+                double actual = extraerNumero(item.getString("cantidad"));
+                actualizarItemPantry(item, actual + cantidad, nombreIng);
+            } else {
+                crearItemEnPantry(jsonPantry, nombreIng, cantidad);
+            }
+        } catch (Exception e) {}
+    }
+
+    private double obtenerCantidadEnListaCompra(JSONObject jsonCompra, String nombreNorm) {
+        try {
+            if (!jsonCompra.has("items")) return 0.0;
+            JSONArray items = jsonCompra.getJSONArray("items");
+            for (int i = 0; i < items.length(); i++) {
+                JSONObject item = items.getJSONObject(i);
+                if (limpiarNombre(item.getString("nombre")).equals(nombreNorm)) {
+                    return item.optDouble("cantidadNum", 0.0);
+                }
+            }
+        } catch (Exception e) {}
+        return 0.0;
+    }
+
+    private void restarDeListaCompra(JSONObject jsonCompra, String nombreNorm, double cantidad) {
+        try {
+            JSONArray items = jsonCompra.getJSONArray("items");
+            for (int i = 0; i < items.length(); i++) {
+                JSONObject item = items.getJSONObject(i);
+                if (limpiarNombre(item.getString("nombre")).equals(nombreNorm)) {
+                    double actual = item.optDouble("cantidadNum", 0.0);
+                    double nuevo = Math.max(0, actual - cantidad);
+                    item.put("cantidadNum", nuevo);
+                    break;
+                }
+            }
+        } catch (Exception e) {}
+    }
+
+    private void actualizarItemPantry(JSONObject item, double nuevaCantidad, String nombreBase) {
+        if (item == null) return;
+        try {
+            String unidad = FoodResources.getAutoUnit(nombreBase, nuevaCantidad);
+            String qtyStr = (nuevaCantidad == (long) nuevaCantidad) ? String.valueOf((long) nuevaCantidad) : String.valueOf(nuevaCantidad);
+            item.put("cantidad", qtyStr + " " + unidad);
+        } catch (Exception e) {}
+    }
+
+    private void crearItemEnPantry(JSONObject jsonPantry, String nombre, double cantidad) {
+        try {
+            if(!jsonPantry.has("Pantry")) jsonPantry.put("Pantry", new JSONArray());
+            JSONArray list = jsonPantry.getJSONArray("Pantry");
+            JSONObject newItem = new JSONObject();
+            String nombreCap = nombre.substring(0,1).toUpperCase() + nombre.substring(1);
+            String unidad = FoodResources.getAutoUnit(nombre, cantidad);
+            String qtyStr = (cantidad == (long) cantidad) ? String.valueOf((long) cantidad) : String.valueOf(cantidad);
+
+            newItem.put("nombre", nombreCap);
+            newItem.put("cantidad", qtyStr + " " + unidad);
+            newItem.put("imagen", FoodResources.getIconFor(nombreCap));
+            list.put(newItem);
+        } catch (Exception e){}
+    }
+
+    private void agregarAListaCompra(JSONObject jsonCompra, String nombre, double cantidadFaltante) {
+        try {
+            if (!jsonCompra.has("items")) jsonCompra.put("items", new JSONArray());
+            JSONArray items = jsonCompra.getJSONArray("items");
+
+            boolean found = false;
+            for (int i = 0; i < items.length(); i++) {
+                JSONObject item = items.getJSONObject(i);
+                String n = limpiarNombre(item.getString("nombre"));
+                if (n.equals(nombre)) {
+                    double actual = item.optDouble("cantidadNum", 0.0);
+                    item.put("cantidadNum", actual + cantidadFaltante);
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) {
+                JSONObject newItem = new JSONObject();
+                String nombreCap = nombre.substring(0,1).toUpperCase() + nombre.substring(1);
+                newItem.put("nombre", nombreCap);
+                newItem.put("cantidadNum", cantidadFaltante);
+                items.put(newItem);
+            }
+        } catch (Exception e) {}
+    }
+
+    private String limpiarNombre(String nombreRaw) {
+        if (nombreRaw == null) return "";
+        String nombre = nombreRaw;
+        if (nombre.contains("(")) {
+            nombre = nombre.substring(0, nombre.indexOf("("));
+        }
+        nombre = nombre.trim().toLowerCase();
+        if (nombre.endsWith("s") && nombre.length() > 3) {
+            nombre = nombre.substring(0, nombre.length() - 1);
+        }
+        if (nombre.endsWith("ce")) nombre = nombre.substring(0, nombre.length()-2) + "z"; // nueces -> nuez
+        return nombre;
+    }
+
+
+    // =========================================================================
+    // UI Y ADAPTADORES
+    // =========================================================================
+
+    private void mostrarSelectorDeRecetas(String dia, String tipoComida, TextInputEditText cajon) {
+        View customView = getLayoutInflater().inflate(R.layout.dialog_meal_selector, null);
+        TextView titulo = customView.findViewById(R.id.dialogTitle);
+        titulo.setText(tipoComida + " (" + dia + ")");
+
+        String claveBusqueda = tipoComida.trim().toLowerCase();
+        if (claveBusqueda.equals("diner")) claveBusqueda = "dinner";
+
+        Map<String, List<String>> recetasMap = libroDeRecetas.get(claveBusqueda);
+        List<String> nombresRecetas = new ArrayList<>();
+        if (recetasMap != null) nombresRecetas.addAll(recetasMap.keySet());
+        else nombresRecetas.add("No hay recetas");
+
+        Map<String, Double> stockActual = leerStockDeArchivo();
+
+        ListView lista = customView.findViewById(R.id.listRecetas);
+        if (recetasMap != null) {
+            ColoredRecipeAdapter adapter = new ColoredRecipeAdapter(getContext(), nombresRecetas, recetasMap, stockActual);
+            lista.setAdapter(adapter);
+        } else {
+            lista.setAdapter(new ArrayAdapter<>(getContext(), android.R.layout.simple_list_item_1, nombresRecetas));
+        }
+
+        Button btnDelete = customView.findViewById(R.id.btnDeleteRecipe);
+        AlertDialog dialog = new AlertDialog.Builder(getContext()).setView(customView).create();
+        if (dialog.getWindow() != null) dialog.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));
+
+        lista.setOnItemClickListener((parent, view, position, id) -> {
+            String recetaNueva = nombresRecetas.get(position);
+            if (!recetaNueva.equals("No hay recetas")) {
+                String key = dia + "_" + tipoComida;
+
+                String recetaVieja = menuSemanal.get(key);
+                if (recetaVieja != null && !recetaVieja.isEmpty()) {
+                    procesarIngredientesReceta(recetaVieja, tipoComida, false);
+                }
+
+                procesarIngredientesReceta(recetaNueva, tipoComida, true);
+
+                cajon.setText(recetaNueva);
+                menuSemanal.put(key, recetaNueva);
+                guardarPlanSemanal();
+                dialog.dismiss();
+            }
+        });
+
+        // BOTÓN BORRAR
+        btnDelete.setOnClickListener(v -> {
+            String key = dia + "_" + tipoComida;
+            String recetaVieja = menuSemanal.get(key);
+            if (recetaVieja != null && !recetaVieja.isEmpty()) {
+                procesarIngredientesReceta(recetaVieja, tipoComida, false);
+                Toast.makeText(getContext(), "Receta borrada", Toast.LENGTH_SHORT).show();
+            }
+            menuSemanal.remove(key);
+            cajon.setText("");
+            guardarPlanSemanal();
+            dialog.dismiss();
+        });
+
+        dialog.show();
+    }
+
+    private class ColoredRecipeAdapter extends ArrayAdapter<String> {
+        private final Map<String, List<String>> recetasMap;
+        private final Map<String, Double> stockActual;
+
+        public ColoredRecipeAdapter(Context context, List<String> recetas, Map<String, List<String>> recetasMap, Map<String, Double> stockActual) {
+            super(context, android.R.layout.simple_list_item_1, recetas);
+            this.recetasMap = recetasMap;
+            this.stockActual = stockActual;
+        }
+
+        @NonNull @Override
+        public View getView(int position, View convertView, @NonNull ViewGroup parent) {
+            View view = super.getView(position, convertView, parent);
+            String nombreReceta = getItem(position);
+
+            if (nombreReceta == null || nombreReceta.equals("No hay recetas")) {
+                view.setBackgroundColor(Color.WHITE);
+                return view;
+            }
+
+            List<String> ingredientes = recetasMap.get(nombreReceta);
+            boolean tengoTodo = true;
+            boolean tengoAlgo = false;
+
+            for (String itemRaw : ingredientes) {
+                String nombreNorm = limpiarNombre(itemRaw);
+                double cantidadNecesaria = extraerNumero(itemRaw);
+                if (cantidadNecesaria <= 0) cantidadNecesaria = 1.0;
+
+                double cantidadTengo = stockActual.getOrDefault(nombreNorm, 0.0);
+
+                if (cantidadTengo >= cantidadNecesaria) {
+                    tengoAlgo = true;
+                } else {
+                    tengoTodo = false;
+                    if (cantidadTengo > 0) tengoAlgo = true;
+                }
+            }
+
+            if (tengoTodo) view.setBackgroundColor(Color.parseColor("#A5D6A7")); // Verde
+            else if (tengoAlgo) view.setBackgroundColor(Color.parseColor("#FFF59D")); // Amarillo
+            else view.setBackgroundColor(Color.parseColor("#EF9A9A")); // Rojo
+
+            return view;
+        }
+    }
+
+    // =========================================================================
+    // CARGA DE DATOS Y ARCHIVOS
+    // =========================================================================
+
+    private Map<String, Double> leerStockDeArchivo() {
+        Map<String, Double> stock = new HashMap<>();
+        JSONObject json = leerJSON(ARCHIVO_PANTRY);
+        try {
+            Iterator<String> keys = json.keys();
+            while(keys.hasNext()) {
+                JSONArray arr = json.getJSONArray(keys.next());
+                for(int i=0; i<arr.length(); i++) {
+                    JSONObject obj = arr.getJSONObject(i);
+                    String n = limpiarNombre(obj.getString("nombre"));
+                    double q = extraerNumero(obj.getString("cantidad"));
+                    stock.put(n, stock.getOrDefault(n, 0.0) + q);
+                }
+            }
+        } catch(Exception e){}
+        return stock;
+    }
+
+    private JSONObject leerJSON(String archivo) {
+        try {
+            FileInputStream fis = requireActivity().openFileInput(archivo);
+            BufferedReader reader = new BufferedReader(new InputStreamReader(fis));
+            StringBuilder sb = new StringBuilder();
+            String line;
+            while ((line = reader.readLine()) != null) sb.append(line);
+            fis.close();
+            return new JSONObject(sb.toString());
+        } catch (Exception e) { return new JSONObject(); }
+    }
+
+    private void guardarJSON(String archivo, JSONObject json) {
+        try {
+            FileOutputStream fos = requireActivity().openFileOutput(archivo, MODE_PRIVATE);
+            fos.write(json.toString().getBytes());
+            fos.close();
+        } catch (Exception e) {}
+    }
+
     private void guardarPlanSemanal() {
         JSONObject rootObject = new JSONObject();
         try {
@@ -97,36 +452,71 @@ public class HomeFragment extends Fragment {
     }
 
     private void cargarPlanSemanal() {
+        menuSemanal.clear(); // CRÍTICO: Limpiar memoria
         try {
             FileInputStream fis = requireActivity().openFileInput(ARCHIVO_PLAN);
-            InputStreamReader isr = new InputStreamReader(fis);
-            BufferedReader reader = new BufferedReader(isr);
+            BufferedReader reader = new BufferedReader(new InputStreamReader(fis));
             StringBuilder sb = new StringBuilder();
             String line;
             while ((line = reader.readLine()) != null) sb.append(line);
             fis.close();
+
             JSONObject rootObject = new JSONObject(sb.toString());
-            menuSemanal = new HashMap<>();
             Iterator<String> keys = rootObject.keys();
             while (keys.hasNext()) {
                 String key = keys.next();
                 menuSemanal.put(key, rootObject.getString(key));
             }
-        } catch (Exception e) { menuSemanal = new HashMap<>(); }
+        } catch (Exception e) {}
+    }
+
+    private double extraerNumero(String t) {
+        try { Matcher m = Pattern.compile("[-+]?[0-9]*\\.?[0-9]+").matcher(t);
+            if(m.find()) return Double.parseDouble(m.group()); } catch(Exception e){}
+        return 0.0;
+    }
+
+    private void mostrarListaCompra() {
+        JSONObject json = leerJSON(ARCHIVO_COMPRA);
+        List<String> itemsVisuales = new ArrayList<>();
+
+        try {
+            if (json.has("items")) {
+                JSONArray arr = json.getJSONArray("items");
+                for(int i=0; i<arr.length(); i++) {
+                    JSONObject item = arr.getJSONObject(i);
+                    String nombre = item.getString("nombre");
+                    double qty = item.getDouble("cantidadNum");
+                    if (qty > 0.01) {
+                        String unidad = FoodResources.getAutoUnit(nombre, qty);
+                        String qtyStr = (qty == (long)qty) ? String.valueOf((long)qty) : String.format("%.1f", qty);
+                        itemsVisuales.add(nombre + ": " + qtyStr + " " + unidad);
+                    }
+                }
+            }
+        } catch (Exception e) {}
+
+        if (itemsVisuales.isEmpty()) {
+            Toast.makeText(getContext(), "Lista de compra vacía", Toast.LENGTH_SHORT).show();
+        } else {
+            new AlertDialog.Builder(getContext())
+                    .setTitle("Lista de la Compra")
+                    .setItems(itemsVisuales.toArray(new String[0]), null)
+                    .setPositiveButton("Cerrar", null)
+                    .setNeutralButton("Borrar Todo", (d, w) -> {
+                        getContext().deleteFile(ARCHIVO_COMPRA);
+                        Toast.makeText(getContext(), "Lista borrada", Toast.LENGTH_SHORT).show();
+                    })
+                    .show();
+        }
     }
 
     private void cargarDatosDesdeSupabase() {
         SupabaseApi api = SupabaseClient.getApi();
         Call<List<RecetaModelo>> llamada = api.obtenerRecetas(SupabaseClient.SUPABASE_KEY, "Bearer " + SupabaseClient.SUPABASE_KEY);
         llamada.enqueue(new Callback<List<RecetaModelo>>() {
-            @Override
-            public void onResponse(Call<List<RecetaModelo>> call, Response<List<RecetaModelo>> response) {
-                if (response.isSuccessful() && response.body() != null) procesarRecetas(response.body());
-            }
-            @Override
-            public void onFailure(Call<List<RecetaModelo>> call, Throwable t) {
-                Toast.makeText(getContext(), "Error conexión Supabase", Toast.LENGTH_SHORT).show();
-            }
+            @Override public void onResponse(Call<List<RecetaModelo>> call, Response<List<RecetaModelo>> response) { if (response.body() != null) procesarRecetas(response.body()); }
+            @Override public void onFailure(Call<List<RecetaModelo>> call, Throwable t) {}
         });
     }
 
@@ -136,361 +526,39 @@ public class HomeFragment extends Fragment {
         libroDeRecetas.put("lunch", new HashMap<>());
         libroDeRecetas.put("dinner", new HashMap<>());
 
-        for (RecetaModelo r : lista) {
-            if (r.getCategoria() == null || r.getNombre() == null) continue;
-            String catLimpia = r.getCategoria().trim().toLowerCase();
-            if (catLimpia.equals("diner")) catLimpia = "dinner";
+        JSONObject cacheJson = new JSONObject();
+        try {
+            cacheJson.put("breakfast", new JSONObject());
+            cacheJson.put("lunch", new JSONObject());
+            cacheJson.put("dinner", new JSONObject());
 
-            Map<String, List<String>> recetasDeEsaCategoria = libroDeRecetas.get(catLimpia);
-            if (recetasDeEsaCategoria != null) {
-                List<String> ingredientesTexto = new ArrayList<>();
-                if (r.getIngredientes() != null) {
-                    for (RecetaModelo.Ingrediente item : r.getIngredientes()) {
-                        if (item.getNombre() != null) {
-                            String ing = item.getNombre();
-                            if(item.getCantidad() != null) ing += " (" + item.getCantidad() + ")";
+            for (RecetaModelo r : lista) {
+                if (r.getCategoria() == null) continue;
+                String catLimpia = r.getCategoria().trim().toLowerCase();
+                if (catLimpia.equals("diner")) catLimpia = "dinner";
+
+                if (libroDeRecetas.containsKey(catLimpia)) {
+                    List<String> ingredientesTexto = new ArrayList<>();
+                    JSONArray jsonIngs = new JSONArray();
+
+                    if (r.getIngredientes() != null) {
+                        for (RecetaModelo.Ingrediente item : r.getIngredientes()) {
+                            String ing = item.getNombre() + " (" + item.getCantidad() + ")";
                             ingredientesTexto.add(ing);
+                            jsonIngs.put(ing);
                         }
                     }
-                }
-                recetasDeEsaCategoria.put(r.getNombre(), ingredientesTexto);
-            }
-        }
-    }
-
-    private void step1_PedirNombre() {
-        AlertDialog.Builder builder = new AlertDialog.Builder(getContext());
-        builder.setTitle("Paso 1/3: Nombre");
-        final TextInputEditText input = new TextInputEditText(getContext());
-        FrameLayout container = new FrameLayout(getContext());
-        input.setLayoutParams(new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-        container.addView(input);
-        builder.setView(container);
-        builder.setPositiveButton("Siguiente", (dialog, which) -> {
-            if (!input.getText().toString().isEmpty()) step2_ElegirCategoria(input.getText().toString());
-        });
-        builder.show();
-    }
-
-    private void step2_ElegirCategoria(String nombre) { /* Código igual al anterior... */ }
-    private void step3_PedirIngredientes(String nombre, String cat) { /* Código igual... */ }
-
-    // --- ZONA PRINCIPAL: LOGICA ---
-    private void mostrarSelectorDeRecetas(String dia, String tipoComida, TextInputEditText cajon) {
-        View customView = getLayoutInflater().inflate(R.layout.dialog_meal_selector, null);
-        TextView titulo = customView.findViewById(R.id.dialogTitle);
-        titulo.setText(tipoComida + " (" + dia + ")");
-
-        String claveBusqueda = tipoComida.trim().toLowerCase();
-        if (claveBusqueda.equals("diner")) claveBusqueda = "dinner";
-
-        Map<String, List<String>> recetasMap = libroDeRecetas.get(claveBusqueda);
-        final List<String> nombresRecetas = new ArrayList<>();
-        if (recetasMap != null) nombresRecetas.addAll(recetasMap.keySet());
-        else nombresRecetas.add("No hay recetas");
-
-        // Cargar despensa temporal para colorear
-        Map<String, Double> pantryStockTemp = new HashMap<>();
-        try {
-            FileInputStream fis = requireActivity().openFileInput(ARCHIVO_PANTRY);
-            BufferedReader reader = new BufferedReader(new InputStreamReader(fis));
-            String line;
-            StringBuilder sb = new StringBuilder();
-            while ((line = reader.readLine()) != null) sb.append(line);
-            fis.close();
-            JSONObject json = new JSONObject(sb.toString());
-            Iterator<String> keys = json.keys();
-            while (keys.hasNext()) {
-                org.json.JSONArray items = json.getJSONArray(keys.next());
-                for (int i = 0; i < items.length(); i++) {
-                    JSONObject item = items.getJSONObject(i);
-                    String nombreNorm = FoodResources.getSingularName(item.getString("nombre")).toLowerCase();
-                    double qty = extraerNumero(item.getString("cantidad"));
-                    pantryStockTemp.put(nombreNorm, pantryStockTemp.getOrDefault(nombreNorm, 0.0) + qty);
+                    libroDeRecetas.get(catLimpia).put(r.getNombre(), ingredientesTexto);
+                    cacheJson.getJSONObject(catLimpia).put(r.getNombre(), jsonIngs);
                 }
             }
-        } catch (Exception e) { /* Vacío */ }
+            // Guardar Cache para GalleryFragment
+            FileOutputStream fos = requireActivity().openFileOutput(ARCHIVO_RECETAS_CACHE, MODE_PRIVATE);
+            fos.write(cacheJson.toString().getBytes());
+            fos.close();
 
-        ListView lista = customView.findViewById(R.id.listRecetas);
-        if (recetasMap != null) {
-            ColoredRecipeAdapter adapter = new ColoredRecipeAdapter(getContext(), nombresRecetas, recetasMap, pantryStockTemp);
-            lista.setAdapter(adapter);
-        } else {
-            lista.setAdapter(new ArrayAdapter<>(getContext(), android.R.layout.simple_list_item_1, nombresRecetas));
-        }
-
-        Button btnDelete = customView.findViewById(R.id.btnDeleteRecipe);
-        AlertDialog dialog = new AlertDialog.Builder(getContext()).setView(customView).create();
-        if (dialog.getWindow() != null) dialog.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT));
-
-        lista.setOnItemClickListener((parent, view, position, id) -> {
-            String recetaNueva = nombresRecetas.get(position);
-            if (!recetaNueva.equals("No hay recetas")) {
-                String key = dia + "_" + tipoComida;
-                String recetaAnterior = menuSemanal.get(key);
-
-                // Intercambio
-                if (recetaAnterior != null && !recetaAnterior.isEmpty() && !recetaAnterior.equals(recetaNueva)) {
-                    devolverIngredientesALaDespensa(recetaAnterior, tipoComida);
-                }
-
-                cajon.setText(recetaNueva);
-                menuSemanal.put(key, recetaNueva);
-                guardarPlanSemanal();
-                descontarIngredientesDeDespensa(recetaNueva, tipoComida);
-                dialog.dismiss();
-            }
-        });
-
-        btnDelete.setOnClickListener(v -> {
-            String key = dia + "_" + tipoComida;
-            String recetaAnterior = menuSemanal.get(key);
-            if (recetaAnterior != null && !recetaAnterior.isEmpty()) {
-                devolverIngredientesALaDespensa(recetaAnterior, tipoComida);
-            }
-            menuSemanal.remove(key);
-            cajon.setText("");
-            guardarPlanSemanal();
-            if (weekAdapter != null) weekAdapter.notifyDataSetChanged();
-            dialog.dismiss();
-            Toast.makeText(getContext(), "Deleted & Restored", Toast.LENGTH_SHORT).show();
-        });
-        dialog.show();
-    }
-
-    private void generarYMostrarListaCompra() {
-        ArrayList<String> listaCompra = new ArrayList<>();
-        try {
-            FileInputStream fis = requireActivity().openFileInput(ARCHIVO_PANTRY);
-            BufferedReader reader = new BufferedReader(new InputStreamReader(fis));
-            StringBuilder jsonStr = new StringBuilder();
-            String line;
-            while ((line = reader.readLine()) != null) jsonStr.append(line);
-            fis.close();
-            JSONObject json = new JSONObject(jsonStr.toString());
-            Iterator<String> keys = json.keys();
-            while (keys.hasNext()) {
-                org.json.JSONArray items = json.getJSONArray(keys.next());
-                for (int i = 0; i < items.length(); i++) {
-                    JSONObject item = items.getJSONObject(i);
-                    String cantidadStr = item.getString("cantidad");
-                    double stock = extraerNumero(cantidadStr);
-                    if (stock < -0.01) {
-                        String nombre = item.getString("nombre");
-                        double falta = Math.abs(stock);
-
-                        // AQUÍ FORZAMOS LA UNIDAD CORRECTA VISUALMENTE
-                        String unidad = FoodResources.getAutoUnit(nombre, falta);
-
-                        String cantidadBonita = (falta == (long) falta) ? String.valueOf((long)falta) : String.format("%.1f", falta);
-                        listaCompra.add(nombre.toUpperCase() + " (Buy: " + cantidadBonita + " " + unidad + ")");
-                    }
-                }
-            }
-        } catch (Exception e) { }
-
-        if (listaCompra.isEmpty()) Toast.makeText(getContext(), "Everything in stock!", Toast.LENGTH_SHORT).show();
-        else new AlertDialog.Builder(getContext()).setTitle("Shopping List").setMultiChoiceItems(listaCompra.toArray(new String[0]), null, null).setPositiveButton("Close", null).show();
-    }
-
-    private void descontarIngredientesDeDespensa(String nombreReceta, String tipoComida) {
-        String keyMap = tipoComida.toLowerCase();
-        if(keyMap.equals("diner")) keyMap = "dinner";
-        if (!libroDeRecetas.containsKey(keyMap) || !libroDeRecetas.get(keyMap).containsKey(nombreReceta)) return;
-
-        List<String> ingredientesReceta = libroDeRecetas.get(keyMap).get(nombreReceta);
-        JSONObject pantryRoot;
-        try {
-            FileInputStream fis = requireActivity().openFileInput(ARCHIVO_PANTRY);
-            BufferedReader reader = new BufferedReader(new InputStreamReader(fis));
-            StringBuilder sb = new StringBuilder();
-            String line;
-            while ((line = reader.readLine()) != null) sb.append(line);
-            fis.close();
-            pantryRoot = new JSONObject(sb.toString());
-        } catch (Exception e) { pantryRoot = new JSONObject(); }
-
-        boolean huboCambios = false;
-        try {
-            Map<String, Double> requisitos = new HashMap<>();
-            List<String> encontrados = new ArrayList<>();
-
-            for (String linea : ingredientesReceta) {
-                String nombreRaw = linea;
-                double cantidad = 1.0;
-                if (linea.contains("(") && linea.contains(")")) {
-                    nombreRaw = linea.substring(0, linea.indexOf("(")).trim();
-                    cantidad = extraerNumero(linea);
-                }
-                String nombreNorm = FoodResources.getSingularName(nombreRaw).toLowerCase();
-                requisitos.put(nombreNorm, cantidad);
-            }
-
-            Iterator<String> categorias = pantryRoot.keys();
-            while (categorias.hasNext()) {
-                String cat = categorias.next();
-                org.json.JSONArray items = pantryRoot.getJSONArray(cat);
-                for (int i = 0; i < items.length(); i++) {
-                    JSONObject item = items.getJSONObject(i);
-                    String nombrePantryNorm = FoodResources.getSingularName(item.getString("nombre")).toLowerCase();
-                    if (requisitos.containsKey(nombrePantryNorm)) {
-                        double aRestar = requisitos.get(nombrePantryNorm);
-                        double stockActual = extraerNumero(item.getString("cantidad"));
-                        String unidad = item.getString("cantidad").replaceAll("[-+0-9.]", "").trim();
-                        if(unidad.isEmpty()) unidad = "ud.";
-
-                        double nuevoStock = stockActual - aRestar;
-                        if (Math.abs(nuevoStock) < 0.01) {
-                            nuevoStock = 0.0;
-                        }
-                        // NO CAMBIAMOS UNIDAD AQUÍ, MANTENEMOS LA DEL USUARIO
-                        String finalStr = (nuevoStock == (long) nuevoStock) ? (long)nuevoStock + " " + unidad : String.format("%.1f %s", nuevoStock, unidad);
-                        item.put("cantidad", finalStr);
-
-                        encontrados.add(nombrePantryNorm);
-                        huboCambios = true;
-                    }
-                }
-            }
-
-            // CREAR FALTANTES (NEGATIVOS)
-            for (Map.Entry<String, Double> req : requisitos.entrySet()) {
-                if (!encontrados.contains(req.getKey())) {
-                    String categoriaDestino = "Pantry";
-                    if (!pantryRoot.has(categoriaDestino)) pantryRoot.put(categoriaDestino, new org.json.JSONArray());
-                    org.json.JSONArray listaCat = pantryRoot.getJSONArray(categoriaDestino);
-                    JSONObject nuevoItem = new JSONObject();
-
-                    String nombreBonito = req.getKey().substring(0, 1).toUpperCase() + req.getKey().substring(1);
-                    double cantidadNegativa = -req.getValue();
-
-                    // UNIDAD AUTOMÁTICA AQUÍ
-                    String unidadAuto = FoodResources.getAutoUnit(nombreBonito, cantidadNegativa);
-
-                    nuevoItem.put("nombre", nombreBonito);
-                    nuevoItem.put("cantidad", cantidadNegativa + " " + unidadAuto);
-                    nuevoItem.put("imagen", FoodResources.getIconFor(nombreBonito));
-                    listaCat.put(nuevoItem);
-                    huboCambios = true;
-                }
-            }
-            if (huboCambios) {
-                FileOutputStream fos = requireActivity().openFileOutput(ARCHIVO_PANTRY, MODE_PRIVATE);
-                fos.write(pantryRoot.toString().getBytes());
-                fos.close();
-            }
         } catch (Exception e) { e.printStackTrace(); }
     }
 
-    private void devolverIngredientesALaDespensa(String nombreReceta, String tipoComida) {
-        /* Código idéntico al de descontar, pero sumando 'cantidadADevolver' y sin crear nuevos items */
-        // ... (Para abreviar, usa el código que ya te di en pasos anteriores, solo cambiando - por +)
-        // La lógica es exactamente igual de simple: buscar, sumar, guardar.
-        // Aquí no necesitamos crear nada porque si no está, no hay nada que devolver.
-        // Copia el método devolverIngredientesALaDespensa de la respuesta anterior.
-        String keyMap = tipoComida.toLowerCase();
-        if(keyMap.equals("diner")) keyMap = "dinner";
-
-        if (!libroDeRecetas.containsKey(keyMap) || !libroDeRecetas.get(keyMap).containsKey(nombreReceta)) return;
-
-        List<String> ingredientesReceta = libroDeRecetas.get(keyMap).get(nombreReceta);
-        JSONObject pantryRoot;
-        try {
-            FileInputStream fis = requireActivity().openFileInput(ARCHIVO_PANTRY);
-            BufferedReader reader = new BufferedReader(new InputStreamReader(fis));
-            StringBuilder sb = new StringBuilder();
-            String line;
-            while ((line = reader.readLine()) != null) sb.append(line);
-            fis.close();
-            pantryRoot = new JSONObject(sb.toString());
-        } catch (Exception e) { return; }
-
-        boolean huboCambios = false;
-        try {
-            Map<String, Double> aDevolver = new HashMap<>();
-            for (String linea : ingredientesReceta) {
-                String nombreRaw = linea;
-                double cantidad = 1.0;
-                if (linea.contains("(") && linea.contains(")")) {
-                    nombreRaw = linea.substring(0, linea.indexOf("(")).trim();
-                    cantidad = extraerNumero(linea);
-                }
-                String nombreNorm = FoodResources.getSingularName(nombreRaw).toLowerCase();
-                aDevolver.put(nombreNorm, cantidad);
-            }
-
-            Iterator<String> categorias = pantryRoot.keys();
-            while (categorias.hasNext()) {
-                String cat = categorias.next();
-                org.json.JSONArray items = pantryRoot.getJSONArray(cat);
-                for (int i = 0; i < items.length(); i++) {
-                    JSONObject item = items.getJSONObject(i);
-                    String nombrePantryNorm = FoodResources.getSingularName(item.getString("nombre")).toLowerCase();
-
-                    if (aDevolver.containsKey(nombrePantryNorm)) {
-                        double cantidadADevolver = aDevolver.get(nombrePantryNorm);
-                        double stockActual = extraerNumero(item.getString("cantidad"));
-                        String unidad = item.getString("cantidad").replaceAll("[-+0-9.]", "").trim();
-
-                        double nuevoStock = stockActual + cantidadADevolver;
-                        String finalStr = (nuevoStock == (long) nuevoStock) ? (long)nuevoStock + " " + unidad : String.format("%.1f %s", nuevoStock, unidad);
-                        item.put("cantidad", finalStr);
-                        huboCambios = true;
-                    }
-                }
-            }
-            if (huboCambios) {
-                FileOutputStream fos = requireActivity().openFileOutput(ARCHIVO_PANTRY, MODE_PRIVATE);
-                fos.write(pantryRoot.toString().getBytes());
-                fos.close();
-            }
-        } catch (Exception e) { e.printStackTrace(); }
-    }
-
-    private double extraerNumero(String texto) {
-        try {
-            Matcher matcher = Pattern.compile("[-+]?[0-9]*\\.?[0-9]+").matcher(texto);
-            if (matcher.find()) return Double.parseDouble(matcher.group());
-        } catch (Exception e) { }
-        return 0.0;
-    }
-
-    private class ColoredRecipeAdapter extends ArrayAdapter<String> {
-        private final Map<String, List<String>> recetasMap;
-        private final Map<String, Double> pantryStock;
-        public ColoredRecipeAdapter(Context context, List<String> recetas, Map<String, List<String>> recetasMap, Map<String, Double> pantryStock) {
-            super(context, android.R.layout.simple_list_item_1, recetas);
-            this.recetasMap = recetasMap;
-            this.pantryStock = pantryStock;
-        }
-        @NonNull @Override
-        public View getView(int position, View convertView, @NonNull ViewGroup parent) {
-            View view = super.getView(position, convertView, parent);
-            String nombreReceta = getItem(position);
-            if (nombreReceta == null || nombreReceta.equals("No hay recetas")) {
-                view.setBackgroundColor(Color.WHITE); return view;
-            }
-            List<String> ingredientesNecesarios = recetasMap.get(nombreReceta);
-            int total = ingredientesNecesarios.size(), tengo = 0;
-            for (String ingRaw : ingredientesNecesarios) {
-                String nombreNorm = "";
-                double cantNec = 1.0;
-                if (ingRaw.contains("(") && ingRaw.contains(")")) {
-                    nombreNorm = FoodResources.getSingularName(ingRaw.substring(0, ingRaw.indexOf("(")).trim()).toLowerCase();
-                    cantNec = extraerNumero(ingRaw);
-                } else {
-                    nombreNorm = FoodResources.getSingularName(ingRaw).toLowerCase();
-                }
-                if (pantryStock.containsKey(nombreNorm)) {
-                    double cantTengo = pantryStock.get(nombreNorm);
-                    if (cantTengo >= cantNec) tengo++;
-                    else if (cantTengo > 0) tengo++;
-                }
-            }
-            if (tengo == total) view.setBackgroundColor(Color.parseColor("#81C784"));
-            else if (tengo > 0) view.setBackgroundColor(Color.parseColor("#FFF176"));
-            else view.setBackgroundColor(Color.parseColor("#E57373"));
-            return view;
-        }
-    }
+    private void step1_PedirNombre() {}
 }
