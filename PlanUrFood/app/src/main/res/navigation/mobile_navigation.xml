@@ -20,7 +20,7 @@
     <fragment
         android:id="@+id/nav_camera"
         android:name="com.example.planurfood.ui.home.CameraFragment"
-        android:label="Escanear Alimentos"
+        android:label="scan ingredients"
         tools:layout="@layout/fragment_camera" />
 
 </navigation>

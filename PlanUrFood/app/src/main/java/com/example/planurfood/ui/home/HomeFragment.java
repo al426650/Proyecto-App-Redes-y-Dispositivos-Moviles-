@@ -339,7 +339,7 @@ public class HomeFragment extends Fragment {
             String recetaVieja = menuSemanal.get(key);
             if (recetaVieja != null && !recetaVieja.isEmpty()) {
                 procesarIngredientesReceta(recetaVieja, tipoComida, false);
-                Toast.makeText(getContext(), "Receta borrada", Toast.LENGTH_SHORT).show();
+                Toast.makeText(getContext(), "Recipe deleted", Toast.LENGTH_SHORT).show();
             }
             menuSemanal.remove(key);
             cajon.setText("");
@@ -497,7 +497,7 @@ public class HomeFragment extends Fragment {
         } catch (Exception e) {}
 
         if (itemsVisuales.isEmpty()) {
-            Toast.makeText(getContext(), "Lista de compra vacía", Toast.LENGTH_SHORT).show();
+            Toast.makeText(getContext(), "Empty shopping list", Toast.LENGTH_SHORT).show();
         } else {
             new AlertDialog.Builder(getContext())
                     .setTitle("Lista de la Compra")
@@ -505,7 +505,7 @@ public class HomeFragment extends Fragment {
                     .setPositiveButton("Cerrar", null)
                     .setNeutralButton("Borrar Todo", (d, w) -> {
                         getContext().deleteFile(ARCHIVO_COMPRA);
-                        Toast.makeText(getContext(), "Lista borrada", Toast.LENGTH_SHORT).show();
+                        Toast.makeText(getContext(), "Deleted list", Toast.LENGTH_SHORT).show();
                     })
                     .show();
         }
@@ -649,11 +649,11 @@ public class HomeFragment extends Fragment {
             fos.write(cache.toString().getBytes());
             fos.close();
 
-            Toast.makeText(getContext(), "Receta guardada localmente", Toast.LENGTH_SHORT).show();
+            Toast.makeText(getContext(), "Recipe saved locally", Toast.LENGTH_SHORT).show();
 
         } catch (Exception e) {
             e.printStackTrace();
-            Toast.makeText(getContext(), "Error guardando receta", Toast.LENGTH_SHORT).show();
+            Toast.makeText(getContext(), "Error saving recipe", Toast.LENGTH_SHORT).show();
         }
     }
 }

@@ -76,7 +76,7 @@ public class CameraFragment extends Fragment {
             if (mCamera != null && !isProcessing) {
                 try {
                     isProcessing = true;
-                    txtStatus.setText("Analizando...");
+                    txtStatus.setText("analyzing...");
                     mCamera.takePicture(null, null, mPicture);
                 } catch (Exception e) {
                     isProcessing = false;
@@ -174,12 +174,12 @@ public class CameraFragment extends Fragment {
             }
             if (huboCambios) {
                 guardarJSON("midestpensa.json", jsonPantry);
-                txtStatus.setText("Añadido: " + detectados.toString());
-                Toast.makeText(getContext(), "Guardado correctamente", Toast.LENGTH_SHORT).show();
+                txtStatus.setText("Added: " + detectados.toString());
+                Toast.makeText(getContext(), "Saved correctly", Toast.LENGTH_SHORT).show();
                 // Volver atrás tras 2 seg
                 new Handler().postDelayed(() -> Navigation.findNavController(getView()).navigateUp(), 2000);
             } else {
-                txtStatus.setText("No se detectó nada");
+                txtStatus.setText("Nothing was detected");
                 isProcessing = false;
                 mCamera.startPreview();
             }

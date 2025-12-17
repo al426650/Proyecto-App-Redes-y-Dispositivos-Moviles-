@@ -20,13 +20,6 @@ import java.net.HttpURLConnection;
 
 public class NetworkConectionPython extends Thread {
 
-    private static final int HTTP_SERVER_PORT = 8082;
-    String url_yolo = "https://predict.ultralytics.com/";
-    String api = "be7dd2e555dbbf5f5e4809e94f0637e7a238977017";
-    String url_modelo = "https://hub.ultralytics.com/models/Pi3uAeiO8JYD2bX0wotZ";
-    JSONObject data;
-    JSONObject cabezera;
-    JSONObject fichero;
     static File mediaStorageDir;
     static File mediaFile;
 
@@ -34,8 +27,7 @@ public class NetworkConectionPython extends Thread {
     public static Context Ncontext;
 
     private Handler handlerNetworkExecutor;
-    private HttpURLConnection HttpURLConnection;
-    private String body;
+
     private Python python;
     private PyObject mainModule;
     private PyObject respuesta;
