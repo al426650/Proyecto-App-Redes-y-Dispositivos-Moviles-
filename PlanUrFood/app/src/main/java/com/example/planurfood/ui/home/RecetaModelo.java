@@ -19,19 +19,19 @@ public class RecetaModelo {
     @SerializedName("id") // Esto suele ser estándar
     private Integer id;
 
-    // --- GETTERS (Para leer) ---
+    // --- GETTERS  ---
     public String getNombre() { return nombre; }
     public String getCategoria() { return categoria; }
     public List<Ingrediente> getIngredientes() { return ingredientes; }
     public Integer getId() { return id; }
 
-    // --- SETTERS (Para escribir/crear nuevas) ---
+    // --- SETTERS ---
     public void setNombre(String nombre) { this.nombre = nombre; }
     public void setCategoria(String categoria) { this.categoria = categoria; }
     public void setIngredientes(List<Ingrediente> ingredientes) { this.ingredientes = ingredientes; }
 
 
-    // --- NIVEL 2: EL JSON DE DENTRO (En Inglés por el Excel) ---
+    // --- NIVEL 2: EL JSON DE DENTRO ---
     public static class Ingrediente {
 
         @SerializedName("name") // EN EL JSON PONE "name"

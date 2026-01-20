@@ -147,16 +147,16 @@ public class HomeFragment extends Fragment {
                     compraChanged = true;
                 }
             } else {
-                // BORRAR RECETA: Devolución inteligente
+                // BORRAR RECETA: devuelve alimentos a la pantry
                 double cantidadEnListaCompra = obtenerCantidadEnListaCompra(jsonCompra, nombreIng);
 
                 if (cantidadEnListaCompra > 0) {
-                    // Si estaba en la lista de compra, lo quitamos de ahí (porque nunca lo compramos)
+                    // Si estaba en la lista de compra, lo quitamos de ahí
                     double aQuitarDeCompra = Math.min(cantidadEnListaCompra, cantidadNecesaria);
                     restarDeListaCompra(jsonCompra, nombreIng, aQuitarDeCompra);
                     compraChanged = true;
 
-                    // Si sobró algo (raro), eso sí vuelve a despensa
+                    // Si sobró algo, eso sí vuelve a despensa
                     double restoParaDespensa = cantidadNecesaria - aQuitarDeCompra;
                     if (restoParaDespensa > 0.01) {
                         devolverADespensa(jsonPantry, refMap, nombreIng, restoParaDespensa);
@@ -174,7 +174,6 @@ public class HomeFragment extends Fragment {
         if (compraChanged) guardarJSON(ARCHIVO_COMPRA, jsonCompra);
     }
 
-    // --- Helpers de Gestión ---
 
     private void devolverADespensa(JSONObject jsonPantry, Map<String, JSONObject> refMap, String nombreIng, double cantidad) {
         try {
@@ -452,7 +451,7 @@ public class HomeFragment extends Fragment {
     }
 
     private void cargarPlanSemanal() {
-        menuSemanal.clear(); // CRÍTICO: Limpiar memoria
+        menuSemanal.clear(); //  Limpiar memoria
         try {
             FileInputStream fis = requireActivity().openFileInput(ARCHIVO_PLAN);
             BufferedReader reader = new BufferedReader(new InputStreamReader(fis));
@@ -560,7 +559,6 @@ public class HomeFragment extends Fragment {
         } catch (Exception e) { e.printStackTrace(); }
     }
 
-    // --- LÓGICA RECUPERADA PARA AÑADIR RECETAS ---
 
     private void step1_PedirNombre() {
         AlertDialog.Builder builder = new AlertDialog.Builder(getContext());
