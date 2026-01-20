@@ -23,3 +23,5 @@ public class SupabaseClient {
         return retrofit.create(SupabaseApi.class);
     }
 }
+
+

@@ -43,13 +43,10 @@ public class WeekAdapter extends RecyclerView.Adapter<WeekAdapter.WeekViewHolder
         String dayName = days.get(position);
         holder.textDayName.setText(dayName);
 
-        // CORRECCIÓN 1: Usamos 'dayName' (que es la variable local) en lugar de 'dia'
-        // CORRECCIÓN 2: Las claves deben coincidir con HomeFragment ("_Dinner")
         String desayuno = datosGuardados.get(dayName + "_Breakfast");
         String comida   = datosGuardados.get(dayName + "_Lunch");
         String cena     = datosGuardados.get(dayName + "_Dinner");
 
-        // CORRECCIÓN 3: Usamos 'holder.input...' en vez de 'holder.et...'
         holder.inputBreakfast.setText(desayuno != null ? desayuno : "");
         holder.inputLunch.setText(comida != null ? comida : "");
         holder.inputdinner.setText(cena != null ? cena : "");

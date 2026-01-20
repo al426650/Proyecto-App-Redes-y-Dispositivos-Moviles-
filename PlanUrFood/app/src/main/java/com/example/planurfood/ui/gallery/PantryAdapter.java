@@ -57,8 +57,6 @@ public class PantryAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder>
             itemHolder.name.setText(item.getName());
             itemHolder.qty.setText(item.getQuantity());
             itemHolder.icon.setImageResource(item.getIconResId());
-
-            // --- DETECTAR CLIC ---
             itemHolder.itemView.setOnClickListener(v -> listener.onItemClick(item));
         }
     }

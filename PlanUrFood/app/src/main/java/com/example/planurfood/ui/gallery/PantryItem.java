@@ -16,8 +16,6 @@ public class PantryItem {
     public String getName() { return name; }
     public String getQuantity() { return quantity; }
     public int getIconResId() { return iconResId; }
-
-    // --- NUEVO: Setter necesario para actualizar la cantidad ---
     public void setQuantity(String quantity) {
         this.quantity = quantity;
     }

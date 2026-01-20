@@ -80,9 +80,6 @@ public class GalleryFragment extends Fragment {
         return root;
     }
 
-    // =========================================================================
-    // LÓGICA DE AÑADIR Y ASIGNACIÓN AUTOMÁTICA
-    // =========================================================================
 
     private void mostrarDialogo(PantryItem itemAEditar) {
         View customView = getLayoutInflater().inflate(R.layout.dialog_add_pantry, null);

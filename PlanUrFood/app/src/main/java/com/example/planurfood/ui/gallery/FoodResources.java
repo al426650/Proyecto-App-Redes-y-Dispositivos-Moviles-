@@ -9,22 +9,30 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+/*
+En esta clase se implementarán métodos en los que nos apoyaremos
+a la hora de añadir elementos en la pantry. También contiene elementos
+como diccionarios en los que guardamos referencias a recursos usados
+en la pantry (iconos de los alimentos, categorías por defecto).
+ */
 public class FoodResources {
 
     private static final Map<String, Integer> iconMap = new HashMap<>();
     private static final Map<String, String> categoryMap = new HashMap<>();
 
-    // LISTA DE LÍQUIDOS
+    // Lista de líquidos para poner bien las unidades en el
+    // caso de que sea un líquido.
     private static final Set<String> LIQUIDS = new HashSet<>(Arrays.asList(
             "milk", "oil", "water", "broth", "cream", "vinegar",
             "soy sauce", "juice", "wine", "beer", "tea", "coffee",
             "olive oil", "lemon juice"
     ));
-
+    // Lista con las categorías de alimentos
     public static final List<String> CATEGORIES = Arrays.asList(
             "Produce", "Dairy & Eggs", "Meat & Fish", "Pantry", "Bakery", "Frozen", "Others"
     );
 
+    // Mapa para añadir el icono correcto a cada alimento.
     static {
         // --- ICONOS ---
         iconMap.put("egg", R.drawable.huevos);
@@ -47,7 +55,7 @@ public class FoodResources {
         iconMap.put("yogurt", R.drawable.yogur);
         iconMap.put("apple", R.drawable.manzana);
         iconMap.put("strawberry", R.drawable.fresa);
-        // ... el resto ...
+
 
         // --- CATEGORÍAS ---
         categoryMap.put("milk", "Dairy & Eggs");
@@ -66,22 +74,30 @@ public class FoodResources {
         categoryMap.put("bread", "Bakery");
     }
 
+    //Obtenemos una lista con los nombres de los alimentos con igono disponibles.
     public static List<String> getAvailableNames() {
         return new ArrayList<>(iconMap.keySet());
     }
-
+    /*
+    Intentamos obtener el nombre en singular del alimento, de esta
+    forma no habrá duplicados con tomate y tomates.
+     */
     public static String getSingularName(String input) {
         if (input == null || input.isEmpty()) return "";
         String clean = input.trim().toLowerCase();
+        // Intentamos directamente
         if (iconMap.containsKey(clean)) return capitalize(clean);
+        // Regla del plural simple "s" y evitamos las palabras con "ss"
         if (clean.endsWith("s") && !clean.endsWith("ss")) {
             String noS = clean.substring(0, clean.length() - 1);
             if (iconMap.containsKey(noS)) return capitalize(noS);
         }
+        // Regla del plural "es"
         if (clean.endsWith("es")) {
             String noEs = clean.substring(0, clean.length() - 2);
             if (iconMap.containsKey(noEs)) return capitalize(noEs);
         }
+        // Regla plural 'ies' (ej. berries -> berry)
         if (clean.endsWith("ies")) {
             String withY = clean.substring(0, clean.length() - 3) + "y";
             if (iconMap.containsKey(withY)) return capitalize(withY);
@@ -94,6 +110,7 @@ public class FoodResources {
         return str.substring(0, 1).toUpperCase() + str.substring(1).toLowerCase();
     }
 
+    // Método para encontrar el icono correspondiente, si no está en la lista se pone uno genérico de cámara
     public static int getIconFor(String foodName) {
         if (foodName == null) return android.R.drawable.ic_menu_camera;
         String singular = getSingularName(foodName).toLowerCase();
@@ -101,6 +118,7 @@ public class FoodResources {
         return android.R.drawable.ic_menu_camera;
     }
 
+    // Método para obtener la categoría correspondiente.
     public static String getCategoryFor(String foodName) {
         if (foodName == null) return "Others";
         String singular = getSingularName(foodName).toLowerCase();
@@ -108,13 +126,14 @@ public class FoodResources {
         return "Others";
     }
 
+    // A continuación dos métodos para agregar la unidad correspondiente si es un líquido.
     public static boolean isLiquid(String foodName) {
         if (foodName == null) return false;
         return LIQUIDS.contains(getSingularName(foodName).toLowerCase());
     }
 
     /**
-     * LÓGICA DE UNIDADES (CORREGIDA):
+     * LÓGICA DE UNIDADES:
      * 1. Líquidos -> "ml"
      * 2. Cantidad < 10 -> "uds"
      * 3. Cantidad >= 10 -> "g"

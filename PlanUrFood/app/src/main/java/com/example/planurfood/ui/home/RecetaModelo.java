@@ -5,7 +5,7 @@ import java.util.List;
 
 public class RecetaModelo {
 
-    // --- NIVEL 1: LAS COLUMNAS DE TU TABLA (En Español) ---
+    //
 
     @SerializedName("nombre") // TU TABLA DICE 'nombre'
     private String nombre;
