@@ -191,7 +191,7 @@ public class CameraFragment extends Fragment {
         }
     }
 
-    // --- Helpers JSON (Sin cambios) ---
+    // --- Helpers JSON ---
     private void addToPantry(JSONObject jsonPantry, String nombre, double cantidad) {
         try {
             if(!jsonPantry.has("Pantry")) jsonPantry.put("Pantry", new JSONArray());

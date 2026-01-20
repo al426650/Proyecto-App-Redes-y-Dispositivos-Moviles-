@@ -20,7 +20,6 @@ public class CameraPreview extends SurfaceView implements SurfaceHolder.Callback
         this.mContext = context;
         this.mSurfaceHolder = this.getHolder();
         this.mSurfaceHolder.addCallback(this);
-        // Deprecated pero necesario en versiones muy antiguas de Android
         this.mSurfaceHolder.setType(SurfaceHolder.SURFACE_TYPE_PUSH_BUFFERS);
     }
 
@@ -45,8 +44,6 @@ public class CameraPreview extends SurfaceView implements SurfaceHolder.Callback
             } catch (Exception e) {
                 // Ignorar
             }
-            // Nota: El release() suele hacerse en la Activity, pero si lo gestionas aquí descomenta:
-            // mCamera.release();
         }
     }
 
@@ -73,10 +70,7 @@ public class CameraPreview extends SurfaceView implements SurfaceHolder.Callback
                 parameters.setFocusMode(Camera.Parameters.FOCUS_MODE_AUTO);
             }
 
-            // 2. --- TAMAÑO DE LA IMAGEN (SOLUCIÓN PANTALLA NEGRA) ---
-            // Buscamos el tamaño soportado más cercano a 360x360.
-            // Si pones setPreviewSize(360, 360) directamente, la pantalla se verá negra
-            // porque el hardware no lo soporta.
+            // 2. --- TAMAÑO DE LA IMAGEN ---
             List<Camera.Size> supportedSizes = parameters.getSupportedPreviewSizes();
             Camera.Size optimalSize = getOptimalPreviewSize(supportedSizes, 360, 360);
 
@@ -97,10 +91,10 @@ public class CameraPreview extends SurfaceView implements SurfaceHolder.Callback
         }
     }
 
-    /**
-     * Busca el tamaño de cámara soportado más cercano al deseado (360x360)
-     * para evitar que la cámara falle o se vea negra.
-     */
+
+     //Busca el tamaño de cámara soportado más cercano al deseado (360x360)
+     //para evitar que la cámara falle o se vea negra.
+
     private Camera.Size getOptimalPreviewSize(List<Camera.Size> sizes, int w, int h) {
         final double ASPECT_TOLERANCE = 0.1; // Tolerancia de aspecto si fuera necesaria
         double targetRatio = (double) h / w;
